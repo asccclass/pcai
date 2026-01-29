@@ -13,9 +13,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// ChatAgent 定義聊天代理人的介面 (ChatSession 或 TopicManager)
+type ChatAgent interface {
+	Chat(input string) (string, error)
+}
+
 // StartSignalListener 啟動 Signal 監聽服務
 // session: 用於與 AI 進行對話
-func StartSignalListener(session *ChatSession) {
+func StartSignalListener(session ChatAgent) {
 	host := os.Getenv("SignalHost")
 	if host == "" {
 		host = "localhost:8080"
@@ -85,7 +90,7 @@ func StartSignalListener(session *ChatSession) {
 }
 
 // 解析並處理 Signal 訊息
-func handleSignalMessage(session *ChatSession, msgBytes []byte, host, userNumber string) {
+func handleSignalMessage(session ChatAgent, msgBytes []byte, host, userNumber string) {
 	var msg map[string]interface{}
 	if err := json.Unmarshal(msgBytes, &msg); err != nil {
 		log.Printf("[Signal] JSON unmarshal error: %v", err)
@@ -114,6 +119,9 @@ func handleSignalMessage(session *ChatSession, msgBytes []byte, host, userNumber
 				// 假設 ChatSession 的操作本身不是 thread-safe，我們可能需要加鎖。
 				// 但為了簡單整合，先假設 pcai 主要在 stdin 等待，這裡偶爾插入。
 				// (更嚴謹的做法是使用 channel 將訊息送回 main loop 處理，或替 ChatSession 加 Mutex)
+
+				// 為了避免複雜度，這裡直接呼叫，但在 memory.go 可能需要 Mutex
+				// (暫時不做 Mutex，假設使用者不會同時打字和傳 Signal)
 
 				// 為了避免複雜度，這裡直接呼叫，但在 memory.go 可能需要 Mutex
 				// (暫時不做 Mutex，假設使用者不會同時打字和傳 Signal)

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/ollama/ollama/api"
@@ -27,5 +28,5 @@ func (t *TimeTool) Definition() api.Tool {
 }
 
 func (t *TimeTool) Run(argsJSON string) (string, error) {
-	return time.Now().Format("2006-01-02 15:04:05"), nil
+	return fmt.Sprintf("現在時間為：%v", time.Now().Format("2006-01-02 15:04:05")), nil
 }
