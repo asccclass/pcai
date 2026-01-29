@@ -55,6 +55,12 @@ go run pcai.go
 -   **使用者查詢**：「幫我把電腦桌面下的D:\Backup\Desktop\mkv目錄內的影音檔案都轉換為mp4格式，並放置於：D:\Backup\Desktop\mkv目錄下」
 -   AI 會偵測意圖，呼叫 `convert_videos` 工具，並使用 FFmpeg 執行轉檔。
 
+### Signal 整合
+
+```
+curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==" -H "Sec-WebSocket-Version: 13" https://msg.justdrink.com.tw/v1/receive/+886921609364
+```
+
 ## 專案結構
 
 -   `pcai.go`：主要程式進入點。設定客戶端、註冊表並執行聊天迴圈。

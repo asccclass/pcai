@@ -39,6 +39,9 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// 啟動 Signal 監聽服務 (如果不使用 Signal 功能，確保環境變數未設定或此函數內部有處理)
+	go StartSignalListener(session)
+
 	fmt.Println("\n=== PCAI Agent (輸入 'exit' 或 'quit' 離開) ===")
 
 	// 3. 進入互動模式
