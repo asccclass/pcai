@@ -45,8 +45,8 @@ func (t *KnowledgeSearchTool) Run(argsJSON string) (string, error) {
 	}
 	json.Unmarshal([]byte(argsJSON), &args)
 
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".pcai", "knowledge.md")
+	home, _ := os.Executable()
+	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return "目前沒有長期記憶紀錄。", nil

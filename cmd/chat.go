@@ -47,7 +47,11 @@ func uintPtr(i uint) *uint { return &i }
 
 func runChat(cmd *cobra.Command, args []string) {
 	scanner := bufio.NewScanner(os.Stdin)
-	renderer, _ := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(100))
+	// --- 緊湊型 Glamour 樣式設定 ---
+	renderer, _ := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(100),
+	)
 
 	// 初始化工具
 	registry := tools.NewRegistry()
@@ -104,9 +108,14 @@ func runChat(cmd *cobra.Command, args []string) {
 
 			// 顯示 AI 回覆內容 (一次性渲染)
 			if aiMsg.Content != "" {
-				fmt.Println(aiStyle.Render("AI:"))
+				// 印出「AI: 」標籤 (不換行)
+				fmt.Print(aiStyle.Render("AI: "))
 				out, _ := renderer.Render(fullResponse.String())
-				fmt.Print(out)
+				// 去除 Glamour 和 AI 內容前後的空白與換行
+				cleanOut := strings.TrimSpace(out)
+				fmt.Print(cleanOut)
+				// 結尾手動補兩個換行，保持與下個提示符的距離
+				fmt.Print("\n\n")
 				clipboard.WriteAll(fullResponse.String())
 			}
 
@@ -120,11 +129,15 @@ func runChat(cmd *cobra.Command, args []string) {
 			// 執行工具
 			for _, tc := range aiMsg.ToolCalls {
 				argsJSON, _ := json.Marshal(tc.Function.Arguments)
-				fmt.Println(toolStyle.Render(fmt.Sprintf("🛠️  執行工具 [%s] 參數: %s", tc.Function.Name, string(argsJSON))))
+				// 改用灰色且稍微縮進的樣式
+				toolHint := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
+					fmt.Sprintf("  ↳ 🛠️  Executing %s(%s)...", tc.Function.Name, string(argsJSON)),
+				)
+				fmt.Println(toolHint)
 
 				result, toolErr := registry.CallTool(tc.Function.Name, string(argsJSON))
 				if toolErr != nil {
-					result = "Error: " + toolErr.Error()
+					result = fmt.Sprintf("執行失敗。原因：%v。請檢查指令是否正確（例如 Linux 應用 rm 而非 delete）。", toolErr)
 				}
 
 				sess.Messages = append(sess.Messages, ollama.Message{

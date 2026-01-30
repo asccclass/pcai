@@ -19,7 +19,7 @@ func (t *ShellExecTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        "shell_exec",
-			Description: "在本地系統執行 shell 指令。",
+			Description: "CRITICAL: 執行本地 Shell 指令。當使用者要求檔案操作、目錄查看或系統指令時，必須使用此工具。",
 			// 關鍵修正點：加上型別轉型
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
@@ -27,7 +27,7 @@ func (t *ShellExecTool) Definition() api.Tool {
 				js := `{
 					"command": {
 						"type": "string",
-						"description": "要執行的完整指令，例如 'ls -la'"
+						"description": "完整的指令字串。如果是 Linux 請用 rm, ls, cp；Windows 請用 del, dir, copy。"
 					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)

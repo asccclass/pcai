@@ -14,8 +14,8 @@ import (
 
 // ListHistory 顯示所有儲存過的 Session 簡述
 func ListHistory() {
-	home, _ := os.UserHomeDir()
-	historyDir := filepath.Join(home, ".pcai", "history")
+	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	historyDir := filepath.Join(home, "botmemory", "history")
 
 	files, err := os.ReadDir(historyDir)
 	if err != nil || len(files) == 0 {
@@ -72,7 +72,7 @@ func CheckAndSummarize(modelName string, systemPrompt string) {
 					{Role: "system", Content: systemPrompt},
 				}
 				SaveSession(CurrentSession)
-				fmt.Println("✨ 歸納完成！已更新 ~/.pcai/knowledge.md")
+				fmt.Println("✨ 歸納完成！已更新 knowledge")
 			}
 		}
 	}
@@ -92,8 +92,8 @@ func sessionToText(s *Session) string {
 
 // saveToKnowledgeBase 輔助函式：存入 Markdown 知識庫
 func saveToKnowledgeBase(summary string) error {
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".pcai", "knowledge.md")
+	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
