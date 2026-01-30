@@ -1,48 +1,38 @@
 package tools
 
-/*
-工具箱管理員 (tools/registry.go)
-這個管理員負責保管所有工具，並提供統一的呼叫窗口。
-*/
-
 import (
 	"fmt"
 
 	"github.com/ollama/ollama/api"
 )
 
-// ToolRegistry 是我們的工具箱
-type ToolRegistry struct {
+// Registry 管理所有可用的工具
+type Registry struct {
 	tools map[string]AgentTool
 }
 
-// NewRegistry 建立一個新工具箱
-func NewRegistry() *ToolRegistry {
-	return &ToolRegistry{
-		tools: make(map[string]AgentTool),
-	}
+func NewRegistry() *Registry {
+	return &Registry{tools: make(map[string]AgentTool)}
 }
 
-// Register 把工具放進箱子裡
-func (r *ToolRegistry) Register(t AgentTool) {
-	fmt.Printf("Registering tool: %s\n", t.Name())
+func (r *Registry) Register(t AgentTool) {
 	r.tools[t.Name()] = t
 }
 
-// GetDefinitions 一次打包所有工具的定義給 AI
-func (r *ToolRegistry) GetDefinitions() []api.Tool {
-	var defs []api.Tool
+// GetDefinitions 取得所有工具的 api.Tool 定義，準備傳給 Ollama
+func (r *Registry) GetDefinitions() []api.Tool {
+	defs := []api.Tool{}
 	for _, t := range r.tools {
 		defs = append(defs, t.Definition())
 	}
 	return defs
 }
 
-// Execute 根據名稱自動找到對應工具並執行
-func (r *ToolRegistry) Execute(name string, argsJSON string) (string, error) {
-	tool, exists := r.tools[name]
-	if !exists {
-		return "", fmt.Errorf("tool '%s' not found", name)
+// CallTool 根據 AI 的要求執行對應工具
+func (r *Registry) CallTool(name string, argsJSON string) (string, error) {
+	tool, ok := r.tools[name]
+	if !ok {
+		return "", fmt.Errorf("找不到工具: %s", name)
 	}
 	return tool.Run(argsJSON)
 }

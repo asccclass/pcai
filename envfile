@@ -1,8 +1,18 @@
 
-
+#內建編輯器
+EDITOR=notepad
 
 AIModel=llama3.3
 OllamaHost=http://172.18.124.210:11434
 
 SignalHost=msg.justdrink.com.tw
 SignalNumber=+886921609364
+
+# Ollama 配置
+PCAI_MODEL=llama3.3
+PCAI_OLLAMA_URL=http://172.18.124.210:11434
+PCAI_SYSTEM_PROMPT=你是一個專業的助手
+
+# 導出配置
+PCAI_FONT_PATH=assets/fonts/msjh.ttf
+PCAI_PDF_OUTPUT_DIR=./exports
