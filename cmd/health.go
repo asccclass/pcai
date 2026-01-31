@@ -52,15 +52,29 @@ var healthCmd = &cobra.Command{
 		}
 
 		// 3. 檢查知識庫 (knowledge.md)
-		home, _ := os.UserHomeDir()
+		home, _ := os.Getwd()
 		kPath := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
 		fmt.Print(labelStyle.Render("長期記憶 (RAG):"))
 		if info, err := os.Stat(kPath); err == nil {
 			sizeKB := float64(info.Size()) / 1024
 			fmt.Printf("%s (大小: %.2f KB)\n", successStyle.Render("● 正常"), sizeKB)
+
+			// --- 新增標籤統計顯示 ---
+			fmt.Print(labelStyle.Render(" └ 標籤統計:"))
+			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(tools.GetKnowledgeStats()))
+
+			// --- 執行自動備份 ---
+			backupMsg, err := tools.AutoBackupKnowledge()
+			fmt.Print(labelStyle.Render(" └ 自動備份:"))
+			if err != nil {
+				fmt.Println(failStyle.Render("○ 失敗: " + err.Error()))
+			} else {
+				fmt.Println(successStyle.Render("● " + backupMsg))
+			}
 		} else {
-			fmt.Println(warnStyle.Render("○ 尚未建立 (累積對話後將自動生成)"))
+			fmt.Println(warnStyle.Render("○ " + kPath + " 尚未建立 (累積對話後將自動生成)"))
 		}
+
 		// 4. 背景任務統計 (BackgroundManager 整合)
 		fmt.Print(labelStyle.Render("背景任務狀態:"))
 		if GlobalBgMgr == nil {

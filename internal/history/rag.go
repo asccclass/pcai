@@ -12,8 +12,12 @@ import (
 // GetRAGEnhancedPrompt 讀取知識庫內容，產生增強型的 System Prompt
 // 這能讓 AI 記起超過 Context Window 限制的長期資訊
 func GetRAGEnhancedPrompt() string {
-	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	home, _ := os.Getwd()
+	// 優先檢查根目錄
 	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		path = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -32,8 +36,12 @@ func GetRAGEnhancedPrompt() string {
 
 // ClearKnowledgeBase 清空長期記憶檔案
 func ClearKnowledgeBase() error {
-	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	home, _ := os.Getwd()
+	// 優先檢查根目錄
 	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		path = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+	}
 	return os.Remove(path)
 }
 

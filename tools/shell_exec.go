@@ -111,7 +111,6 @@ func (t *ShellExecTool) Run(argsJSON string) (string, error) {
 
 	// 判斷是否為非同步執行
 	if isAsync && t.Mgr != nil {
-		fmt.Println("非同步執行")
 		taskID := t.Mgr.AddTask(cleanCommand, func() (string, error) {
 			return t.execute(cleanCommand)
 		})

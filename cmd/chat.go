@@ -64,6 +64,7 @@ func runChat(cmd *cobra.Command, args []string) {
 	registry.Register(&tools.KnowledgeSearchTool{})
 	registry.Register(&tools.FetchURLTool{})
 	registry.Register(&tools.ListTasksTool{Mgr: bgMgr}) // 傳入背景管理器
+	registry.Register(&tools.KnowledgeAppendTool{})     // 加入這行
 	toolDefs := registry.GetDefinitions()
 
 	// 載入 Session 與 RAG 增強
