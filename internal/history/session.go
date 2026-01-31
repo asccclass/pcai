@@ -23,8 +23,9 @@ var CurrentSession *Session
 
 // LoadLatestSession 從本地檔案讀取最近一次的對話紀錄
 func LoadLatestSession() *Session {
-	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
-	// 預設儲存在 ~/.pcai/history/latest.json
+	// 改用 Getwd 確保在開發環境 (go run) 下也能存到正確位置
+	home, _ := os.Getwd()
+	// 預設儲存在 ./botmemory/history/latest.json
 	path := filepath.Join(home, "botmemory", "history", "latest.json")
 
 	data, err := os.ReadFile(path)
@@ -54,7 +55,8 @@ func SaveSession(s *Session) error {
 	s.LastUpdate = time.Now()
 
 	// 確保目錄存在
-	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	// 確保目錄存在
+	home, _ := os.Getwd()
 	dir := filepath.Join(home, "botmemory", "history")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("無法建立紀錄目錄: %v", err)
@@ -72,7 +74,7 @@ func SaveSession(s *Session) error {
 
 // ClearHistory 刪除本地所有的對話紀錄
 func ClearHistory() error {
-	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	home, _ := os.Getwd()
 	path := filepath.Join(home, "botmemory", "history", "latest.json")
 	return os.Remove(path)
 }

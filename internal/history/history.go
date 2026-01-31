@@ -14,7 +14,7 @@ import (
 
 // ListHistory 顯示所有儲存過的 Session 簡述
 func ListHistory() {
-	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	home, _ := os.Getwd()
 	historyDir := filepath.Join(home, "botmemory", "history")
 
 	files, err := os.ReadDir(historyDir)
@@ -92,8 +92,18 @@ func sessionToText(s *Session) string {
 
 // saveToKnowledgeBase 輔助函式：存入 Markdown 知識庫
 func saveToKnowledgeBase(summary string) error {
-	home, _ := os.Executable() // 取得目前執行檔案的絕對路徑
+	home, _ := os.Getwd()
+	// 優先檢查根目錄是否已有 knowledge.md (使用者習慣放根目錄)
+	rootKnowledge := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
 	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+
+	if _, err := os.Stat(rootKnowledge); err == nil {
+		path = rootKnowledge
+	} else {
+		// 確保目錄存在
+		dir := filepath.Dir(path)
+		_ = os.MkdirAll(dir, 0755)
+	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {

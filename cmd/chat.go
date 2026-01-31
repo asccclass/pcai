@@ -25,6 +25,7 @@ var (
 
 	aiStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
 	toolStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true)
+	notifyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // 亮黃色
 	promptStr   = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(">>> ")
 	currentOpts = ollama.Options{Temperature: 0.7, TopP: 0.9}
 )
@@ -53,24 +54,45 @@ func runChat(cmd *cobra.Command, args []string) {
 		glamour.WithWordWrap(100),
 	)
 
+	// 初始化管理器
+	bgMgr := tools.NewBackgroundManager()
+	GlobalBgMgr = bgMgr // 將實例交給全域指標，讓 health 指令讀得到
 	// 初始化工具
 	registry := tools.NewRegistry()
 	registry.Register(&tools.ListFilesTool{})
-	registry.Register(&tools.ShellExecTool{})
+	registry.Register(&tools.ShellExecTool{Mgr: bgMgr}) // 傳入背景管理器
 	registry.Register(&tools.KnowledgeSearchTool{})
 	registry.Register(&tools.FetchURLTool{})
+	registry.Register(&tools.ListTasksTool{Mgr: bgMgr}) // 傳入背景管理器
 	toolDefs := registry.GetDefinitions()
 
 	// 載入 Session 與 RAG 增強
 	sess := history.LoadLatestSession()
+
+	// [FIX] 初始化全域 CurrentSession，否則 CheckAndSummarize 會抓不到
+	history.CurrentSession = sess
+	// [FIX] 啟動時檢查是否需要歸納 (處理「上次關閉後過很久才重開」的情況)
+	history.CheckAndSummarize(modelName, systemPrompt)
+
+	// 若歸納後被清空 (Start New Session)，這裡 sess 內容已變，需重新對齊
+	// 但因為 CurrentSession 是指標，上面的 CheckAndSummarize 內修改的就是同一個物件
+	// 只是若 Messages 被清空，這裡需要確保補回 System Prompt
 	if len(sess.Messages) == 0 {
 		ragPrompt := history.GetRAGEnhancedPrompt()
 		sess.Messages = append(sess.Messages, ollama.Message{Role: "system", Content: systemPrompt + ragPrompt})
 	}
 
-	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("🚀 PCAI Agent 已啟動 (ARM64 Optimized)"))
+	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("🚀 PCAI Agent 已啟動 ( I'm the assistant your terminal demanded, not the one your sleep schedule requested.)"))
 
 	for {
+		// --- 背景任務完成通知推播 ---
+		select {
+		case msg := <-bgMgr.NotifyChan:
+			fmt.Println("\n" + notifyStyle.Render(msg))
+		default:
+			// 無通知則跳過
+		}
+
 		fmt.Print(promptStr)
 		if !scanner.Scan() {
 			break
@@ -131,26 +153,35 @@ func runChat(cmd *cobra.Command, args []string) {
 				argsJSON, _ := json.Marshal(tc.Function.Arguments)
 				// 改用灰色且稍微縮進的樣式
 				toolHint := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
-					fmt.Sprintf("  ↳ 🛠️  Executing %s(%s)...", tc.Function.Name, string(argsJSON)),
+					fmt.Sprintf("  ↳ 🛠️ Executing %s(%s)...", tc.Function.Name, string(argsJSON)),
 				)
 				fmt.Println(toolHint)
 
 				result, toolErr := registry.CallTool(tc.Function.Name, string(argsJSON))
+				// --- 關鍵修正：強化背景執行的反饋 ---
+				var toolFeedback string
 				if toolErr != nil {
-					result = fmt.Sprintf("執行失敗。原因：%v。請檢查指令是否正確（例如 Linux 應用 rm 而非 delete）。", toolErr)
+					toolFeedback = fmt.Sprintf("【執行失敗】：%v", toolErr)
+				} else {
+					// 如果結果包含 "背景啟動"，則給予強大的確認標記
+					if strings.Contains(result, "背景啟動") {
+						aiMsg.ToolCalls = nil // 💡 強制清除，防止 AI 腦袋卡住
+						// toolFeedback = fmt.Sprintf("【SYSTEM】: %s。任務已交給作業系統，請立即停止呼叫工具，並用一句話回報使用者任務已啟動。", result)
+					} else {
+						toolFeedback = fmt.Sprintf("【SYSTEM】: %s", result)
+					}
 				}
 
 				sess.Messages = append(sess.Messages, ollama.Message{
 					Role:    "tool",
-					Content: result,
+					Content: toolFeedback,
 				})
 			}
 			// 執行完工具，會回到循環頂端再次顯示「思考中...」並請 AI 總結工具結果
 		}
 
-		// 持久化 Session
+		// 自動儲存與 RAG 歸納檢查
 		history.SaveSession(sess)
-		// 檢查是否需要歸納 (RAG)
 		history.CheckAndSummarize(modelName, systemPrompt)
 	}
 }

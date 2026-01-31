@@ -88,7 +88,10 @@ func ChatStream(modelName string, messages []Message, tools []api.Tool, opts Opt
 
 		// 處理 AI 請求的工具呼叫
 		if len(chunk.Message.ToolCalls) > 0 {
-			fullAssistantMsg.ToolCalls = append(fullAssistantMsg.ToolCalls, chunk.Message.ToolCalls...)
+			// 如果 fullAssistantMsg 還沒有這組工具呼叫，才加入
+			// 或者簡單地說：在串流模式下，通常最後一個包含 ToolCalls 的封包才是完整的
+			// 這裡我們用覆蓋而非 append，或是比對 ID
+			fullAssistantMsg.ToolCalls = chunk.Message.ToolCalls
 		}
 
 		if chunk.Done {
