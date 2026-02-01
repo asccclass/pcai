@@ -58,13 +58,7 @@ func runChat(cmd *cobra.Command, args []string) {
 	bgMgr := tools.NewBackgroundManager()
 	GlobalBgMgr = bgMgr // 將實例交給全域指標，讓 health 指令讀得到
 	// 初始化工具
-	registry := tools.NewRegistry()
-	registry.Register(&tools.ListFilesTool{})
-	registry.Register(&tools.ShellExecTool{Mgr: bgMgr}) // 傳入背景管理器
-	registry.Register(&tools.KnowledgeSearchTool{})
-	registry.Register(&tools.FetchURLTool{})
-	registry.Register(&tools.ListTasksTool{Mgr: bgMgr}) // 傳入背景管理器
-	registry.Register(&tools.KnowledgeAppendTool{})     // 加入這行
+	registry := tools.InitRegistry(bgMgr)
 	toolDefs := registry.GetDefinitions()
 
 	// 載入 Session 與 RAG 增強
@@ -159,7 +153,7 @@ func runChat(cmd *cobra.Command, args []string) {
 				fmt.Println(toolHint)
 
 				result, toolErr := registry.CallTool(tc.Function.Name, string(argsJSON))
-				// --- 關鍵修正：強化背景執行的反饋 ---
+				// --- 強化背景執行的反饋 ---
 				var toolFeedback string
 				if toolErr != nil {
 					toolFeedback = fmt.Sprintf("【執行失敗】：%v", toolErr)

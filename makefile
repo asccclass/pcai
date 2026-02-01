@@ -1,4 +1,4 @@
-BINARY_NAME=pcai
+.PHONY: test build run deploy clean install BINARY_NAME=pcai
 
 build:
 	go build -o $(BINARY_NAME) main.go
@@ -18,3 +18,6 @@ clean:
 install:
 	go build -o $(BINARY_NAME) main.go
 	mv $(BINARY_NAME) /usr/local/bin/
+
+test-tools:
+	go test -v ./tools/...

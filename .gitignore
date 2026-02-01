@@ -1,3 +1,5 @@
 *.exe
 *.old
 *.txt
+credentials.json
+token.json

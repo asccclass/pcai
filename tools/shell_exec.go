@@ -17,16 +17,17 @@ type ShellExecTool struct {
 
 // sanitizeCommand 確保指令不會因為多餘的轉義而失效
 func (t *ShellExecTool) sanitizeCommand(cmd string) string {
-	// 移除頭尾可能出現的各種引號 (AI 有時會自作聰明加引號)
-	cmd = strings.Trim(cmd, "\"`' ")
-
-	// 修正 AI 常見的指令錯誤
-	cmd = strings.ReplaceAll(cmd, "delete ", "rm -f ")
-
-	// 如果 AI 傳入了轉義過的引號 (如 \"), 將其轉回正常引號
+	// 先將被轉義的引號還原 (把 \" 變回 ")
 	cmd = strings.ReplaceAll(cmd, `\"`, `"`)
+	// 移除最外層可能被 AI 多包的雙引號或單引號。例如 "ls -la" 變成 ls -la
+	cmd = strings.Trim(cmd, `"'`)
+	// 處理常見的刪除指令修正
+	if strings.HasPrefix(cmd, "delete ") {
+		cmd = strings.Replace(cmd, "delete ", "rm -f ", 1)
+	}
 
-	return cmd
+	// 最後做一次前後空白修剪
+	return strings.TrimSpace(cmd)
 }
 
 func (t *ShellExecTool) Name() string { return "shell_exec" }

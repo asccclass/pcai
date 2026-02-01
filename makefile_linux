@@ -1,0 +1,72 @@
+# 專案名稱與參數
+BINARY_NAME=pcai
+VERSION=1.0.0
+BUILD_TIME=$(shell date +%F_%T)
+LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}"
+
+# 預設安裝路徑
+INSTALL_PATH=/usr/local/bin
+
+.PHONY: all setup test build install clean deploy help
+
+# 預設執行目標
+all: setup test build
+
+# 1. 環境設定與安裝依賴套件
+setup:
+	@echo "🚀 正在檢查環境並安裝 Go 依賴套件..."
+	@go mod tidy
+	@go mod download
+	@echo "✅ 依賴套件準備就緒"
+
+# 2. 執行單元測試
+test:
+	@echo "🧪 正在執行單元測試..."
+	@go test -v ./internal/tools/... ./cmd/...
+	@echo "✅ 所有測試皆已通過"
+
+# 3. 本地端編譯 (根據當前系統架構)
+build:
+	@echo "🏗️  正在編譯 ${BINARY_NAME}..."
+	@go build ${LDFLAGS} -o ${BINARY_NAME} main.go
+	@echo "✅ 編譯完成: ./${BINARY_NAME}"
+
+# 4. 針對 ASUS GX10 (ARM64/Linux) 的跨平台編譯
+build-gx10:
+	@echo "🏗️  正在針對 ARM64 (Linux) 進行編譯..."
+	@GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o ${BINARY_NAME}-linux-arm64 main.go
+	@echo "✅ ARM64 版本編譯完成: ./${BINARY_NAME}-linux-arm64"
+
+# 5. 安裝到系統路徑
+install: build
+	@echo "🚚 正在將 ${BINARY_NAME} 安裝到 ${INSTALL_PATH}..."
+	@sudo cp ${BINARY_NAME} ${INSTALL_PATH}
+	@sudo chmod +x ${INSTALL_PATH}/${BINARY_NAME}
+	@echo "✅ 安裝成功！現在你可以直接輸入 '${BINARY_NAME}' 啟動"
+
+# 6. 清理產生的檔案
+clean:
+	@echo "🧹 正在清理編譯產物..."
+	@rm -f ${BINARY_NAME}
+	@rm -f ${BINARY_NAME}-linux-arm64
+	@go clean
+	@echo "✅ 清理完成"
+
+# 7. 自動化部署到遠端 GX10 (需要預先設定好 SSH 免密登入)
+# 使用範例: make deploy HOST=192.168.1.100 USER=jii
+deploy: build-gx10
+	@echo "📤 正在部署到 ${USER}@${HOST}..."
+	@scp ${BINARY_NAME}-linux-arm64 ${USER}@${HOST}:~/${BINARY_NAME}
+	@ssh ${USER}@${HOST} "chmod +x ~/${BINARY_NAME} && mv ~/${BINARY_NAME} ~/bin/${BINARY_NAME}"
+	@echo "✅ 部署完成！"
+
+# 8. 幫助選單
+help:
+	@echo "PCAI Makefile 指令說明:"
+	@echo "  make setup        - 安裝 Go 依賴套件 (go mod tidy)"
+	@echo "  make test         - 執行所有單元測試"
+	@echo "  make build        - 編譯本地版本"
+	@echo "  make build-gx10   - 編譯 Linux ARM64 版本"
+	@echo "  make install      - 編譯並安裝到系統 (/usr/local/bin)"
+	@echo "  make clean        - 清理編譯檔案"
+	@echo "  make deploy       - 跨平台編譯並透過 SCP 部署到 GX10"
