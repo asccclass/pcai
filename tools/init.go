@@ -39,6 +39,16 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 		}
 		gmail.SyncGmailToKnowledge(client, "llama3.3", cfg)
 	})
+	schedMgr.RegisterTaskType("backup_knowledge", func() {
+		msg, err := AutoBackupKnowledge()
+		if err != nil {
+			log.Printf("Backup failed: %v", err)
+		} else {
+			log.Println(msg)
+		}
+	})
+
 	registry.Register(&SchedulerTool{Mgr: schedMgr})
+	registry.Register(&VideoConverterTool{})
 	return registry
 }
