@@ -23,8 +23,8 @@ var (
 	systemPrompt string
 	cfg          *config.Config
 
-	aiStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
-	toolStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true)
+	aiStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
+	// toolStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true)
 	notifyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true) // 亮黃色
 	promptStr   = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(">>> ")
 	currentOpts = ollama.Options{Temperature: 0.7, TopP: 0.9}
@@ -163,7 +163,12 @@ func runChat(cmd *cobra.Command, args []string) {
 						aiMsg.ToolCalls = nil // 💡 強制清除，防止 AI 腦袋卡住
 						// toolFeedback = fmt.Sprintf("【SYSTEM】: %s。任務已交給作業系統，請立即停止呼叫工具，並用一句話回報使用者任務已啟動。", result)
 					} else {
-						toolFeedback = fmt.Sprintf("【SYSTEM】: %s", result)
+						if tc.Function.Name == "list_tasks" && strings.Contains(result, "沒有任何背景任務") {
+							// 讓 AI 知道現在是空的，讓它發揮創意回答
+							result = "【系統資訊】：當前背景任務清單為空。請以助理身份告知使用者你目前正待命中。"
+						} else {
+							toolFeedback = fmt.Sprintf("【SYSTEM】: %s", result)
+						}
 					}
 				}
 
