@@ -2,10 +2,34 @@ package signal
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 )
+
+// 輔助方法：抓取 Signal (與你之前的 REST API 設計銜接)
+type signalResponse struct {
+	Source  string `json:"source"`
+	Content string `json:"content"`
+}
+
+func fetchSignalMessages(ctx context.Context) ([]signalResponse, error) {
+	apiURL := "https://msg.justdrink.com.tw/v2/messages"
+
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var messages []signalResponse
+	if err := json.NewDecoder(resp.Body).Decode(&messages); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
+}
 
 func SendNotification(recipient, message string) error {
 	apiURL := "https://msg.justdrink.com.tw/v2/send"

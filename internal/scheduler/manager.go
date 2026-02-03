@@ -20,10 +20,9 @@ type HeartbeatBrain interface {
 	Think(ctx context.Context, snapshot string) (string, error)
 	// ExecuteDecision 執行 Think 產生的結果
 	ExecuteDecision(ctx context.Context, decision string) error
+	// 讓 Scheduler 知道大腦具備產生簡報的能力
+	GenerateMorningBriefing(ctx context.Context) error
 }
-
-// TaskFunc 是原有的 Cron 任務函式類型
-type TaskFunc func()
 
 type ScheduledJob struct {
 	EntryID     cron.EntryID `json:"entry_id"`
@@ -31,6 +30,9 @@ type ScheduledJob struct {
 	CronSpec    string       `json:"cron_spec"`
 	Description string       `json:"description"`
 }
+
+// TaskFunc 是原有的 Cron 任務函式類型
+type TaskFunc func()
 
 // ==========================================
 // 1. 新增：即時任務介面 (用於一次性背景工作)
@@ -59,7 +61,8 @@ type Manager struct {
 }
 
 // runHeartbeat 是核心邏輯
-func (m *Manager) runHeartbeat() { // 1. 併發防護：確保不會有多個心跳同時在「思考」，避免資源浪費或邏輯混亂
+func (m *Manager) runHeartbeat() {
+	// 1. 併發防護：確保不會有多個心跳同時在「思考」，避免資源浪費或邏輯混亂
 	if !atomic.CompareAndSwapInt32(&m.isThinking, 0, 1) {
 		fmt.Println("[Scheduler] Heartbeat skipped: Brain is already busy thinking.")
 		return
@@ -72,7 +75,7 @@ func (m *Manager) runHeartbeat() { // 1. 併發防護：確保不會有多個心
 
 	fmt.Printf("[Scheduler] Heartbeat started at %s\n", time.Now().Format("15:04:05"))
 
-	// 2. 感知 (Sensing)
+	// 2. 感知 (Sensing)S
 	snapshot := m.brain.CollectEnv(ctx)
 	if snapshot == "" {
 		fmt.Println("[Scheduler] Heartbeat: Nothing to sense, skipping.")
@@ -100,7 +103,7 @@ func (m *Manager) runHeartbeat() { // 1. 併發防護：確保不會有多個心
 
 func NewManager(brain HeartbeatBrain) *Manager {
 	// 1. 初始化 Cron
-	c := cron.New(cron.WithSeconds()) // 建議維持秒級控制
+	c := cron.New() // cron.WithSeconds()) // 建議維持秒級控制
 
 	m := &Manager{
 		cron:     c,
@@ -121,9 +124,22 @@ func NewManager(brain HeartbeatBrain) *Manager {
 		m.runHeartbeat()
 	})
 
-	// 3. 啟動背景 Workers
-	// m.startWorkers()
+	// 新增任務：每天早上 07:00 執行晨間簡報
+	// Cron 格式: "秒 分 時 日 月 週"
+	_, err := m.cron.AddFunc("0 0 7 * * *", func() {
+		fmt.Println("[Scheduler] 正在產生晨間簡報...")
+		ctx := context.Background()
+		// 呼叫我們之前實作的簡報功能
+		err := m.brain.GenerateMorningBriefing(ctx)
+		if err != nil {
+			fmt.Printf("[Scheduler] 晨間簡報執行失敗: %v\n", err)
+		}
+	})
 
+	if err != nil {
+		fmt.Printf("[Scheduler] 註冊簡報任務失敗: %v\n", err)
+	}
+	// m.startWorkers()
 	return m
 }
 

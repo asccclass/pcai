@@ -9,9 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/asccclass/pcai/internal/database"
 	"github.com/asccclass/pcai/internal/gmail"
+	"github.com/asccclass/pcai/internal/heartbeat"
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/scheduler"
+	"github.com/asccclass/pcai/skills"
 	"github.com/ollama/ollama/api"
 )
 
@@ -77,8 +80,20 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 		log.Fatal(err)
 	}
 
+	dbPath := filepath.Join(home, "botmemory", "pcai.db")
+	sqliteDB, err := database.NewSQLite(dbPath)
+	if err != nil {
+		log.Fatalf("無法啟動資料庫: %v", err)
+	}
+	defer sqliteDB.Close()
+
+	// 2. 初始化大腦 (注入資料庫連線)
+	signalURL := "http://localhost:8080/v1/receive/+886912345678"
+
 	// 初始化排程管理器(Hybrid Manager)
-	schedMgr := scheduler.NewManager()
+	myBrain := heartbeat.NewPCAIBrain(sqliteDB, signalURL)
+	// hb := heartbeat.NewHeartbeatProcessor{client: client, tools: bgMgr.tools, memory: bgMgr.memManager}
+	schedMgr := scheduler.NewManager(myBrain)
 
 	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
 	schedMgr.RegisterTaskType("read_email", func() {
@@ -87,7 +102,9 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 			KeyPhrases:     []string{"通知", "重要", "會議"},
 			MaxResults:     5,
 		}
-		gmail.SyncGmailToKnowledge(client, "llama3.3", cfg)
+		// 重構後：使用 Skill 層的 Adapter
+		myGmailSkill := skills.NewGmailSkill(client, "llama3.3")
+		myGmailSkill.Execute(cfg)
 	})
 	schedMgr.RegisterTaskType("backup_knowledge", func() {
 		msg, err := AutoBackupKnowledge()
@@ -110,7 +127,7 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	// 建立 Manager
 	memManager := memory.NewManager(jsonPath, embedder)
 
-	// [關鍵修正] SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
+	// SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
 	SyncMemory(memManager, mdPath)
 
 	// 初始化並註冊工具
