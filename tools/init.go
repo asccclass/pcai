@@ -77,29 +77,10 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 		log.Fatal(err)
 	}
 
-	registry := NewRegistry()
-	registry.Register(&ListFilesTool{})
-	registry.Register(&ShellExecTool{Mgr: bgMgr}) // 傳入背景管理器
-	registry.Register(&KnowledgeSearchTool{})
-	registry.Register(&FetchURLTool{})
-	registry.Register(&ListTasksTool{Mgr: bgMgr}) // 傳入背景管理器
-	registry.Register(&KnowledgeAppendTool{})
-	// --- 可繼續新增：相關技能工具 ---
-	// 初始化記憶體管理器
-	embedder := memory.NewOllamaEmbedder(os.Getenv("PCAI_OLLAMA_URL"), "mxbai-embed-large")
-	dir := filepath.Join(home, "botmemory", "knowledge", "memory_store.json")
-	memManager := memory.NewManager(dir, embedder)
-	dir = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	SyncMemory(memManager, dir)
-	mgt := NewMemoryTool(memManager)
-	svt := NewMemorySaveTool(memManager, dir)
-	forgetTool := NewMemoryForgetTool(memManager)
-	registry.Register(mgt)
-	registry.Register(svt)
-	registry.Register(forgetTool)
-	// 初始化排程管理器
+	// 初始化排程管理器(Hybrid Manager)
 	schedMgr := scheduler.NewManager()
-	// 註冊具體執行邏輯 (Task Types), 這裡定義 LLM 可以觸發的背景動作
+
+	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
 	schedMgr.RegisterTaskType("read_email", func() {
 		cfg := gmail.FilterConfig{
 			AllowedSenders: []string{"edu.tw", "service", "justgps", "andyliu"},
@@ -117,7 +98,42 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 		}
 	})
 
-	registry.Register(&SchedulerTool{Mgr: schedMgr})
+	// 初始化記憶體管理器 (RAG)
+	// 定義路徑
+	kbDir := filepath.Join(home, "botmemory", "knowledge")
+	jsonPath := filepath.Join(kbDir, "memory_store.json") // 向量資料庫
+	mdPath := filepath.Join(kbDir, "knowledge.md")        // 原始 Markdown 檔案
+
+	// 建立 Embedder
+	embedder := memory.NewOllamaEmbedder(os.Getenv("PCAI_OLLAMA_URL"), "mxbai-embed-large")
+
+	// 建立 Manager
+	memManager := memory.NewManager(jsonPath, embedder)
+
+	// [關鍵修正] SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
+	SyncMemory(memManager, mdPath)
+
+	// 初始化並註冊工具
+	registry := NewRegistry()
+
+	// 基礎工具
+	registry.Register(&ListFilesTool{})
+	registry.Register(&ShellExecTool{Mgr: bgMgr}) // 傳入背景管理器
+	registry.Register(&KnowledgeSearchTool{})
+	registry.Register(&FetchURLTool{})
+	registry.Register(&ListTasksTool{Mgr: bgMgr}) // 傳入背景管理器
+	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
+
+	// 記憶相關工具
+	registry.Register(NewMemoryTool(memManager))             // 搜尋工具
+	registry.Register(NewMemorySaveTool(memManager, mdPath)) // 儲存工具 (存入 Markdown)
+	// 遺忘工具 (注入 memManager, schedMgr, mdPath)	// 這樣它才能同時操作資料庫並排程刪除檔案
+	registry.Register(NewMemoryForgetTool(memManager, schedMgr, mdPath))
+
+	// 排程工具 (讓 LLM 可以設定 Cron)
+	registry.Register(&SchedulerTool{Mgr: schedMgr})
+
+	// --- 可繼續新增：相關技能工具 ---
 	return registry
 }

@@ -3,3 +3,4 @@
 *.txt
 credentials.json
 token.json
+botmemory/backup/*

@@ -1,21 +1,31 @@
+// 由於刪除時間可能比較慢，所以可以放到背景執行
 package tools
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/asccclass/pcai/internal/memory"
+	"github.com/asccclass/pcai/internal/scheduler"
 
 	"github.com/ollama/ollama/api"
 )
 
 type MemoryForgetTool struct {
-	manager *memory.Manager
+	scheduler    *scheduler.Manager // 注入 Scheduler
+	manager      *memory.Manager
+	markdownPath string
+	fileMutex    sync.Mutex // 互斥鎖：確保同一時間只有一個人在改檔案
 }
 
-func NewMemoryForgetTool(m *memory.Manager) *MemoryForgetTool {
-	return &MemoryForgetTool{manager: m}
+func NewMemoryForgetTool(m *memory.Manager, s *scheduler.Manager, mdPath string) *MemoryForgetTool {
+	return &MemoryForgetTool{
+		manager:      m,
+		scheduler:    s,
+		markdownPath: mdPath,
+	}
 }
 
 func (t *MemoryForgetTool) Name() string {
@@ -27,7 +37,7 @@ func (t *MemoryForgetTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        "memory_forget",
-			Description: "用於刪除或「遺忘」記憶庫中的特定資訊。當使用者要求你忘記某事、修正錯誤資訊或刪除敏感數據時使用。",
+			Description: "用於永久刪除記憶。這會同時從向量資料庫與原始檔案中移除資料。當使用者要求「忘記」、「刪除」某事時使用。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
@@ -57,17 +67,22 @@ func (t *MemoryForgetTool) Run(argsJSON string) (string, error) {
 		return "", fmt.Errorf("參數錯誤: %w", err)
 	}
 
-	// 呼叫 Manager 執行刪除
-	deleted, err := t.manager.DeleteByContent(args.Content)
+	// 同步執行：刪除向量資料庫 (RAM/JSON)
+	// 這一步必須馬上做，確保 Agent 下一句話不會產生幻覺
+	_, err := t.manager.DeleteByContent(args.Content)
 	if err != nil {
-		return "", fmt.Errorf("刪除過程發生錯誤: %w", err)
+		return "", fmt.Errorf("資料庫刪除錯誤: %w", err)
+	}
+	// 非同步操作：建立背景任務並派發給 Scheduler
+	job := &memory.FileDeletionJob{
+		FilePath: t.markdownPath,
+		Content:  args.Content,
+		Mutex:    &t.fileMutex,
 	}
 
-	if !deleted {
-		// 如果精確匹配失敗，這裡其實可以做進階處理（例如先 Search 再 Delete），
-		// 但為了安全，我們先回報找不到。
-		return fmt.Sprintf("找不到內容為「%s」的記憶，無法刪除。", args.Content), nil
+	// 假設 scheduler.Add 接受 tasks.FileDeletionJob
+	if err := t.scheduler.AddBackgroundTask(job); err != nil {
+		return "已從短期記憶移除，但背景同步任務排程失敗。", nil
 	}
-
-	return fmt.Sprintf("已成功將內容「%s」從記憶庫中移除。", args.Content), nil
+	return "我已經忘記這件事了，後台正在同步清理您的原始檔案。", nil
 }

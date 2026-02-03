@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ var (
 	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
 	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
 	failStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
+	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
 )
 
 // 我們需要一個外部傳入的 BackgroundManager 實例
@@ -35,26 +37,44 @@ var healthCmd = &cobra.Command{
 		fmt.Println()
 
 		// 1. 檢查 Ollama 服務
-		fmt.Print(labelStyle.Render("1. Ollama 服務狀態: "))
-		if ollama.CheckService(cfg.OllamaURL) {
-			fmt.Println(successStyle.Render("● 在線 (OK)"))
+		fmt.Print(labelStyle.Render("1.Ollama服務狀態： "))
+		pingMs, online := ollama.GetPingMs(cfg.OllamaURL)
+		if online {
+			// 根據延遲顯示不同顏色
+			pingStr := fmt.Sprintf("● 在線 (延遲: %dms)", pingMs)
+			if pingMs < 20 {
+				fmt.Println(successStyle.Render(pingStr)) // 極快 (綠色)
+			} else if pingMs < 100 {
+				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).Render(pingStr)) // 普通 (黃色)
+			} else {
+				fmt.Println(warnStyle.Render(pingStr)) // 較慢 (橘色)
+			}
 		} else {
 			fmt.Println(failStyle.Render("○ 離線 (ERROR) - 請確認 Ollama 是否已啟動"))
 		}
 
 		// 2. 檢查模型是否已下載
-		fmt.Print(labelStyle.Render(fmt.Sprintf("2. 模型狀態 [%s]: ", cfg.Model)))
+		fmt.Print(labelStyle.Render(fmt.Sprintf("2.模型狀態[%s]：", cfg.Model)))
 		pulled, err := ollama.IsModelPulled(cfg.OllamaURL, cfg.Model)
 		if err == nil && pulled {
 			fmt.Println(successStyle.Render("● 已下載 (OK)"))
 		} else {
 			fmt.Println(failStyle.Render("○ 未找到 - 請執行 'ollama pull " + cfg.Model + "'"))
 		}
-
+		/*
+			// 整合跨平台磁碟檢查
+			fmt.Print(labelStyle.Render("4.磁碟空間："))
+			diskInfo := tools.GetDiskUsageString()
+			if strings.Contains(diskInfo, "已使用 9") {
+				fmt.Println(failStyle.Render("● " + diskInfo))
+			} else {
+				fmt.Println(successStyle.Render("● " + diskInfo))
+			}
+		*/
 		// 3. 檢查知識庫 (knowledge.md)
 		home, _ := os.Getwd()
 		kPath := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-		fmt.Print(labelStyle.Render("長期記憶 (RAG):"))
+		fmt.Print(labelStyle.Render("3.長期記憶 (RAG)："))
 		if info, err := os.Stat(kPath); err == nil {
 			sizeKB := float64(info.Size()) / 1024
 			fmt.Printf("%s (大小: %.2f KB)\n", successStyle.Render("● 正常"), sizeKB)
@@ -76,7 +96,7 @@ var healthCmd = &cobra.Command{
 		}
 
 		// 4. 背景任務統計 (BackgroundManager 整合)
-		fmt.Print(labelStyle.Render("背景任務狀態:"))
+		fmt.Print(labelStyle.Render("4.背景任務狀態："))
 		if GlobalBgMgr == nil {
 			// 如果是獨立執行 pcai health 而非在 chat 中呼叫
 			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("服務未啟動 (僅在 chat 模式下追蹤)"))
@@ -89,11 +109,21 @@ var healthCmd = &cobra.Command{
 			}
 		}
 
-		// 5. 系統架構資訊
-		fmt.Print(labelStyle.Render("系統環境:"))
-		fmt.Printf("%s/%s (Optimized)\n", os.Getenv("GOOS"), os.Getenv("GOARCH"))
+		// 5. 背景任務 (必須在 chat 模式內執行才有數據)
+		fmt.Print(labelStyle.Render("5.背景任務狀態："))
+		if GlobalBgMgr == nil {
+			fmt.Println(dimStyle.Render("服務未啟動 (僅在 chat 模式下追蹤)"))
+		} else {
+			summary := GlobalBgMgr.GetTaskSummary()
+			fmt.Println(warnStyle.Render("● " + summary))
+		}
 
-		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("\n提示: 輸入 'pcai chat' 進入對話模式後，可使用 'list_tasks' 取得詳細清單。"))
+		// 6. 系統架構
+		fmt.Print(labelStyle.Render("6.系統環境："))
+		fmt.Printf("%s/%s\n", runtime.GOOS, runtime.GOARCH)
+
+		fmt.Println()
+		fmt.Println(dimStyle.Render("提示: 輸入 'pcai chat' 進入對話模式後，可使用 'list_tasks' 取得詳細清單。"))
 		fmt.Println()
 
 	},
