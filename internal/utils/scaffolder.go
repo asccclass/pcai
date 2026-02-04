@@ -103,9 +103,38 @@ func saveToFiles(skillName string, parts CodeParts) error {
 
 // GenerateSkillScaffold 產生 Skill 的基礎檔案結構
 func GenerateSkillScaffold(skillName string) error {
-	// 傳遞空的 fields/methods，這樣 template 不會填入額外內容，
-	// 但仍會產生基礎結構 (init.go, persistence.go)
-	return saveToFiles(skillName, CodeParts{})
+	pkgName := strings.ToLower(skillName)
+	structName := strings.Title(skillName) + "Skill"
+	basePath := filepath.Join("skills", pkgName)
+
+	// 1. 建立目錄
+	if err := os.MkdirAll(basePath, 0755); err != nil {
+		return err
+	}
+
+	config := SkillConfig{PackageName: pkgName, StructName: structName}
+
+	// 2. 定義範本
+	templates := map[string]string{
+		"init.go":        initTemplate,
+		"persistence.go": persistenceTemplate,
+	}
+
+	// 3. 渲染並寫入檔案
+	for fileName, content := range templates {
+		filePath := filepath.Join(basePath, fileName)
+		tmpl, _ := template.New(fileName).Parse(content)
+
+		f, err := os.Create(filePath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		tmpl.Execute(f, config)
+	}
+
+	fmt.Printf("✅ 已成功為 %s 產生腳手架於 %s\n", skillName, basePath)
+	return nil
 }
 
 // --- 範本定義 ---
