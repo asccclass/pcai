@@ -13,7 +13,7 @@ type CronEngine struct {
 func NewCronEngine() *CronEngine {
 	// 使用 Seconds 模式 (可選) 或標準 5 欄位模式
 	return &CronEngine{
-		scheduler: cron.New(cron.WithSeconds()),
+		scheduler: cron.New(), // cron.WithSeconds()),
 	}
 }
 

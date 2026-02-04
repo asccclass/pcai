@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/asccclass/pcai/internal/database"
 	"github.com/robfig/cron/v3"
 )
 
@@ -48,6 +49,7 @@ type Manager struct {
 	registry map[string]TaskFunc     // 註冊可用的 Cron 任務
 	jobs     map[string]ScheduledJob // 存放已排程的 Cron 任務
 	mu       sync.RWMutex
+	db       *database.DB            // 資料庫連線
 
 	// --- 新增的 Worker Pool 部分 ---
 	bgJobQueue  chan Job       // 即時任務佇列
@@ -101,7 +103,7 @@ func (m *Manager) runHeartbeat() {
 	}
 }
 
-func NewManager(brain HeartbeatBrain) *Manager {
+func NewManager(brain HeartbeatBrain, db *database.DB) *Manager {
 	// 1. 初始化 Cron
 	c := cron.New() // cron.WithSeconds()) // 建議維持秒級控制
 
@@ -110,6 +112,7 @@ func NewManager(brain HeartbeatBrain) *Manager {
 		registry: make(map[string]TaskFunc),
 		jobs:     make(map[string]ScheduledJob),
 		brain:    brain,
+		db:       db,
 
 		// 2. 初始化 Worker Pool
 		bgJobQueue:  make(chan Job, 100), // 緩衝區 100
@@ -140,6 +143,7 @@ func NewManager(brain HeartbeatBrain) *Manager {
 		fmt.Printf("[Scheduler] 註冊簡報任務失敗: %v\n", err)
 	}
 	// m.startWorkers()
+	
 	return m
 }
 
@@ -214,8 +218,48 @@ func (m *Manager) RegisterTaskType(name string, fn TaskFunc) {
 	m.registry[name] = fn
 }
 
-// AddJob 加入 Cron 排程任務
-func (m *Manager) AddJob(name, spec, taskType string) error {
+// LoadJobs 從資料庫載入任務
+func (m *Manager) LoadJobs() error {
+	ctx := context.Background()
+	jobs, err := m.db.GetCronJobs(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, job := range jobs {
+		// 檢查任務類型是否已註冊
+		m.mu.RLock()
+		fn, ok := m.registry[job.TaskType]
+		m.mu.RUnlock()
+
+		if !ok {
+			log.Printf("[Scheduler] Warning: Task type '%s' not registered for job '%s'. Skipping.", job.TaskType, job.Name)
+			continue
+		}
+
+		// 加入 Cron
+		id, err := m.cron.AddFunc(job.CronSpec, fn)
+		if err != nil {
+			log.Printf("[Scheduler] Error restoring job '%s' with spec '%s': %v", job.Name, job.CronSpec, err)
+			continue
+		}
+
+		// 更新記憶體狀態
+		m.mu.Lock()
+		m.jobs[job.Name] = ScheduledJob{
+			EntryID:     id,
+			TaskName:    job.TaskType,
+			CronSpec:    job.CronSpec,
+			Description: job.Description,
+		}
+		m.mu.Unlock()
+		fmt.Printf("[Scheduler] Restored job: %s (%s)\n", job.Name, job.CronSpec)
+	}
+	return nil
+}
+
+// AddJob 加入 Cron 排程任務 (包含持久化)
+func (m *Manager) AddJob(name, spec, taskType, desc string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -224,18 +268,57 @@ func (m *Manager) AddJob(name, spec, taskType string) error {
 		return fmt.Errorf("不支援的任務類型: %s", taskType)
 	}
 
-	// 這裡使用 AddFunc 加入 Cron
+	// 1. 先寫入資料庫
+	if err := m.db.AddCronJob(context.Background(), name, spec, taskType, desc); err != nil {
+		return fmt.Errorf("failed to persist job: %w", err)
+	}
+
+	// 2. 如果已存在，先移除舊的 Cron Entry
+	if oldJob, exists := m.jobs[name]; exists {
+		m.cron.Remove(oldJob.EntryID)
+	}
+
+	// 3. 加入新的 Cron Entry
 	id, err := m.cron.AddFunc(spec, fn)
 	if err != nil {
+		// 回滾 DB (這裡簡化，不刪除 DB，但這會導致資料不一致，實務上應更嚴謹)
+		// 如果 Cron 格式錯誤，DB 已經存了，下次啟動也會錯誤。
+		// 更好的做法是先驗證 Spec，再存 DB。
+		// 但 Cron 庫驗證 Spec 比較麻煩，這裡我們假設 Spec 在前端或業務層已驗證，或接受這種短暫不一致。
+		// 為求穩健，這裡嘗試刪除 DB entry
+		_ = m.db.RemoveCronJob(context.Background(), name)
 		return fmt.Errorf("Cron 格式錯誤 (%s): %v", spec, err)
 	}
 
 	m.jobs[name] = ScheduledJob{
-		EntryID:  id,
-		TaskName: taskType,
-		CronSpec: spec,
+		EntryID:     id,
+		TaskName:    taskType,
+		CronSpec:    spec,
+		Description: desc,
 	}
 	fmt.Printf("[Scheduler] Cron Job Added: %s (%s)\n", name, spec)
+	return nil
+}
+
+// RemoveJob 移除排程任務
+func (m *Manager) RemoveJob(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	job, exists := m.jobs[name]
+	if !exists {
+		return fmt.Errorf("job not found: %s", name)
+	}
+
+	// 1. 移除 DB
+	if err := m.db.RemoveCronJob(context.Background(), name); err != nil {
+		return fmt.Errorf("failed to remove from db: %w", err)
+	}
+
+	// 2. 移除 Cron Entry
+	m.cron.Remove(job.EntryID)
+	delete(m.jobs, name)
+	fmt.Printf("[Scheduler] Job Removed: %s\n", name)
 	return nil
 }
 

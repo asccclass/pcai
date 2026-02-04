@@ -85,7 +85,8 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	if err != nil {
 		log.Fatalf("無法啟動資料庫: %v", err)
 	}
-	defer sqliteDB.Close()
+	// Note: We do NOT close the DB here because it needs to persist for the lifetime of the application.
+	// defer sqliteDB.Close() 
 
 	// 2. 初始化大腦 (注入資料庫連線)
 	signalURL := "http://localhost:8080/v1/receive/+886912345678"
@@ -93,7 +94,7 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	// 初始化排程管理器(Hybrid Manager)
 	myBrain := heartbeat.NewPCAIBrain(sqliteDB, signalURL)
 	// hb := heartbeat.NewHeartbeatProcessor{client: client, tools: bgMgr.tools, memory: bgMgr.memManager}
-	schedMgr := scheduler.NewManager(myBrain)
+	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
 
 	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
 	schedMgr.RegisterTaskType("read_email", func() {
@@ -114,6 +115,11 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 			log.Println(msg)
 		}
 	})
+
+	// 關鍵修正：在所有 TaskType 註冊完成後，才載入資料庫中的排程
+	if err := schedMgr.LoadJobs(); err != nil {
+		log.Printf("[Scheduler] Failed to load persistent jobs: %v", err)
+	}
 
 	// 初始化記憶體管理器 (RAG)
 	// 定義路徑
@@ -138,7 +144,7 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	registry.Register(&ShellExecTool{Mgr: bgMgr}) // 傳入背景管理器
 	registry.Register(&KnowledgeSearchTool{})
 	registry.Register(&FetchURLTool{})
-	registry.Register(&ListTasksTool{Mgr: bgMgr}) // 傳入背景管理器
+	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
 	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
 

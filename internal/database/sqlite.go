@@ -33,6 +33,7 @@ func NewSQLite(path string) (*DB, error) {
 
 // migrate 負責建立必要的表格
 func (db *DB) migrate() error {
+	// 創建 cron_jobs 表格
 	query := `
 	CREATE TABLE IF NOT EXISTS filters (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +50,13 @@ func (db *DB) migrate() error {
 		score INTEGER DEFAULT 100,   -- AI 的信心分數
 		raw_response TEXT,           -- Ollama 的原始 JSON 回覆（備份用）
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS cron_jobs (
+		name TEXT PRIMARY KEY,
+		cron_spec TEXT NOT NULL,
+		task_type TEXT NOT NULL,
+		description TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`
 
 	_, err := db.Exec(query)
@@ -57,6 +65,47 @@ func (db *DB) migrate() error {
 	}
 	log.Println("[Database] Tables initialized successfully.")
 	return nil
+}
+
+// CronJobModel 定義資料庫中的 Cron Job 結構
+type CronJobModel struct {
+	Name        string `json:"name"`
+	CronSpec    string `json:"cron_spec"`
+	TaskType    string `json:"task_type"`
+	Description string `json:"description"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// AddCronJob 新增或更新 Cron Job
+func (db *DB) AddCronJob(ctx context.Context, name, spec, taskType, desc string) error {
+	query := `INSERT INTO cron_jobs (name, cron_spec, task_type, description) VALUES (?, ?, ?, ?)
+			  ON CONFLICT(name) DO UPDATE SET cron_spec=excluded.cron_spec, task_type=excluded.task_type, description=excluded.description`
+	_, err := db.ExecContext(ctx, query, name, spec, taskType, desc)
+	return err
+}
+
+// GetCronJobs 取得所有 Cron Jobs
+func (db *DB) GetCronJobs(ctx context.Context) ([]CronJobModel, error) {
+	rows, err := db.QueryContext(ctx, "SELECT name, cron_spec, task_type, description, created_at FROM cron_jobs")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []CronJobModel
+	for rows.Next() {
+		var j CronJobModel
+		if err := rows.Scan(&j.Name, &j.CronSpec, &j.TaskType, &j.Description, &j.CreatedAt); err == nil {
+			jobs = append(jobs, j)
+		}
+	}
+	return jobs, nil
+}
+
+// RemoveCronJob 移除 Cron Job
+func (db *DB) RemoveCronJob(ctx context.Context, name string) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM cron_jobs WHERE name = ?", name)
+	return err
 }
 
 // 新增一個方法來儲存日誌

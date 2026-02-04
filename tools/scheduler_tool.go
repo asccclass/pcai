@@ -76,7 +76,7 @@ func (t *SchedulerTool) Run(argsJSON string) (string, error) {
 		args.TaskName = fmt.Sprintf("auto_job_%s", actualTaskType)
 	}
 
-	err := t.Mgr.AddJob(args.TaskName, args.CronExpr, actualTaskType)
+	err := t.Mgr.AddJob(args.TaskName, args.CronExpr, actualTaskType, "Created via Tool")
 	if err != nil {
 		fmt.Printf("Job Failed: %s\n", err)
 		return "", fmt.Errorf("scheduler error: %v", err)
