@@ -39,6 +39,12 @@ type ContactInfo struct {
 	Priority string
 }
 
+// ToolExecutor 定義執行工具的介面
+type ToolExecutor interface {
+	CallTool(name string, argsJSON string) (string, error)
+	GetToolPrompt() string
+}
+
 // PCAIBrain 實作 scheduler.HeartbeatBrain 介面
 // 這裡可以放入你的 Ollama 客戶端、記憶管理器、Signal 客戶端等
 type PCAIBrain struct {
@@ -47,14 +53,20 @@ type PCAIBrain struct {
 	signalAPI   string
 	filterSkill *skills.FilterSkill
 	dispatcher  *notify.Dispatcher
-	// 這裡建議加入你的 LLM Client 介面
+	modelName   string
+	tools       ToolExecutor // 加入工具執行器
 }
 
-func NewPCAIBrain(db *database.DB, apiUrl string) *PCAIBrain {
+func (b *PCAIBrain) SetTools(executor ToolExecutor) {
+	b.tools = executor
+}
+
+func NewPCAIBrain(db *database.DB, apiUrl, modelName string) *PCAIBrain {
 	return &PCAIBrain{
 		db:          db,
 		httpClient:  resty.New().SetTimeout(10 * time.Second).SetRetryCount(2),
 		signalAPI:   apiUrl,
+		modelName:   modelName,
 		filterSkill: skills.NewFilterSkill(db),
 	}
 }
@@ -75,14 +87,23 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 1. SET_FILTER: 當用戶想忽略、過濾、或標記某號碼/關鍵字為重要時。
    - params 需包含: "pattern" (號碼或關鍵字), "action" (URGENT, NORMAL, IGNORE)
 2. CHAT: 一般聊天或詢問。
+3. TOOL_USE: 當用戶要求執行特定任務（如列出檔案、讀取網頁、查詢知識庫）。
+   - params 需包含: "tool" (工具名稱), "args" (JSON 格式的參數字串)
+   - 支援工具列表與詳細參數定義如下:
+%s
 
-範例輸入：「以後看到 +886900 開頭的訊息都直接忽略」
-範例輸出：{"intent": "SET_FILTER", "params": {"pattern": "+886900%%", "action": "IGNORE"}, "reply": "沒問題，我已經記住這個過濾規則了。"}
+
+範例輸入：「請幫我列出當前目錄的檔案」
+範例輸出：{"intent": "TOOL_USE", "params": {"tool": "ListFiles", "args": "{}"}, "reply": "好的，正在為您列出檔案。"}
 
 用戶輸入："%s"
 `
 	// 組合完整的 Prompt
-	formattedPrompt := fmt.Sprintf(systemPrompt, userInput)
+	toolPrompt := ""
+	if b.tools != nil {
+		toolPrompt = b.tools.GetToolPrompt()
+	}
+	formattedPrompt := fmt.Sprintf(systemPrompt, toolPrompt, userInput)
 
 	// 呼叫 Ollama API (使用 go-resty)
 	var result struct {
@@ -92,7 +113,7 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 	resp, err := b.httpClient.R().
 		SetContext(ctx).
 		SetBody(map[string]interface{}{
-			"model":  "llama3.3", // 或你本地使用的模型名稱
+			"model":  b.modelName,
 			"prompt": formattedPrompt,
 			"stream": false,
 			"format": "json", // 強制 Ollama 回傳 JSON 格式
@@ -179,7 +200,7 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 	resp, err := b.httpClient.R().
 		SetContext(ctx).
 		SetBody(map[string]interface{}{
-			"model":  "llama3", // 確保這與你本地運行的模型名稱一致
+			"model":  b.modelName,
 			"prompt": prompt,
 			"stream": false,
 		}).
@@ -232,6 +253,25 @@ func (b *PCAIBrain) HandleUserChat(ctx context.Context, userInput string) (strin
 		}
 		return intentResp.Reply, nil
 
+	case "TOOL_USE":
+		// 如果大腦判斷需要使用工具
+		toolName := intentResp.Params["tool"]
+		toolArgs := intentResp.Params["args"]
+
+		fmt.Printf("[Agent] 嘗試使用工具: %s, 參數: %s\n", toolName, toolArgs)
+
+		if b.tools == nil {
+			return "抱歉，我現在無法使用工具（工具庫未初始化）。", nil
+		}
+
+		// 執行工具
+		result, err := b.tools.CallTool(toolName, toolArgs)
+		if err != nil {
+			return fmt.Sprintf("工具執行失敗: %v", err), nil
+		}
+
+		return fmt.Sprintf("工具執行結果:\n%s", result), nil
+
 	case "CHAT":
 		return intentResp.Reply, nil
 
@@ -250,8 +290,8 @@ func (b *PCAIBrain) SetupDispatcher() {
 
 	// 1. 註冊 Telegram
 	dispatcher.Register(&notify.TelegramNotifier{
-		Token:  "YOUR_BOT_TOKEN",
-		ChatID: "YOUR_CHAT_ID",
+		Token:  "8467211970:AAEdbk6V7928cBMr-3yde6fYS2vU5_YplM8",
+		ChatID: "7736461491",
 		Client: commonClient,
 	})
 
@@ -305,7 +345,7 @@ func (b *PCAIBrain) AskOllama(ctx context.Context, prompt string) (string, error
 	resp, err := b.httpClient.R().
 		SetContext(ctx).
 		SetBody(map[string]interface{}{
-			"model":  "llama3.3", // 確保與你本地的模型名稱一致
+			"model":  b.modelName, // 確保與你本地的模型名稱一致
 			"prompt": prompt,
 			"stream": false, // 簡報通常較長，關閉 stream 以一次性獲取內容
 		}).

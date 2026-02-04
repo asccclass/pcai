@@ -1,0 +1,22 @@
+
+#內建編輯器
+EDITOR=notepad
+
+AIModel=llama3.3
+OllamaHost=
+
+SignalHost=
+SignalNumber=
+
+# Ollama 配置
+PCAI_MODEL=llama3.3
+PCAI_OLLAMA_URL=
+PCAI_SYSTEM_PROMPT=
+
+# 導出配置
+PCAI_FONT_PATH=assets/fonts/msjh.ttf
+PCAI_PDF_OUTPUT_DIR=./exports
+
+# Telegram 配置
+TELEGRAM_TOKEN=
+TELEGRAM_ADMIN_ID=

@@ -9,12 +9,14 @@ import (
 
 // Config 儲存全域配置參數
 type Config struct {
-	Model        string
-	OllamaURL    string
-	SystemPrompt string
-	FontPath     string
-	OutputDir    string
-	HistoryPath  string
+	Model           string
+	OllamaURL       string
+	SystemPrompt    string
+	FontPath        string
+	OutputDir       string
+	HistoryPath     string
+	TelegramToken   string
+	TelegramAdminID string
 }
 
 // LoadConfig 負責初始化配置，支援 .env 檔案與環境變數
@@ -82,7 +84,10 @@ func LoadConfig() *Config {
 		SystemPrompt: getEnv("PCAI_SYSTEM_PROMPT", CoreSystemPrompt),
 		FontPath:     getEnv("PCAI_FONT_PATH", filepath.Join(home, "assets", "fonts", "msjh.ttf")),
 		OutputDir:    getEnv("PCAI_PDF_OUTPUT_DIR", "./exports"),
-		HistoryPath:  getEnv("PCAI_HISTORY_PATH", filepath.Join(home, "internal", "history")),
+
+		HistoryPath:     getEnv("PCAI_HISTORY_PATH", filepath.Join(home, "internal", "history")),
+		TelegramToken:   getEnv("TELEGRAM_TOKEN", ""),
+		TelegramAdminID: getEnv("TELEGRAM_ADMIN_ID", ""),
 	}
 }
 

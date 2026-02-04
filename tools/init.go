@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/asccclass/pcai/internal/channel" // 加入
+	"github.com/asccclass/pcai/internal/config"
 	"github.com/asccclass/pcai/internal/database"
+	"github.com/asccclass/pcai/internal/gateway" // 加入
 	"github.com/asccclass/pcai/internal/gmail"
 	"github.com/asccclass/pcai/internal/heartbeat"
 	"github.com/asccclass/pcai/internal/memory"
@@ -74,6 +77,9 @@ var DefaultRegistry = NewRegistry()
 // Init 初始化工具註冊表
 func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	home, _ := os.Getwd()
+	// 載入設定
+	cfg := config.LoadConfig()
+
 	// 建立 Ollama API 客戶端
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -92,20 +98,39 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	signalURL := "http://localhost:8080/v1/receive/+886912345678"
 
 	// 初始化排程管理器(Hybrid Manager)
-	myBrain := heartbeat.NewPCAIBrain(sqliteDB, signalURL)
-	// hb := heartbeat.NewHeartbeatProcessor{client: client, tools: bgMgr.tools, memory: bgMgr.memManager}
+	myBrain := heartbeat.NewPCAIBrain(sqliteDB, signalURL, cfg.Model)
+
+	// --- 新增：Telegram 整合 ---
+	if cfg.TelegramToken != "" {
+		// 1. 建立 Adapter
+		adapter := heartbeat.NewBrainAdapter(myBrain)
+
+		// 2. 建立 Dispatcher
+		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)
+
+		// 3. 建立 Telegram Channel
+		tgChannel, err := channel.NewTelegramChannel(cfg.TelegramToken)
+		if err != nil {
+			log.Printf("⚠️ 無法啟動 Telegram Channel: %v", err)
+		} else {
+			// 4. 啟動監聽 (非同步)
+			go tgChannel.Listen(dispatcher.HandleMessage)
+			log.Println("✅ Telegram Channel 已啟動並連接至 Gateway")
+		}
+	}
+
 	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
 
 	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
 	schedMgr.RegisterTaskType("read_email", func() {
-		cfg := gmail.FilterConfig{
+		gmailCfg := gmail.FilterConfig{
 			AllowedSenders: []string{"edu.tw", "service", "justgps", "andyliu"},
 			KeyPhrases:     []string{"通知", "重要", "會議"},
 			MaxResults:     5,
 		}
 		// 重構後：使用 Skill 層的 Adapter
-		myGmailSkill := skills.NewGmailSkill(client, "llama3.3")
-		myGmailSkill.Execute(cfg)
+		myGmailSkill := skills.NewGmailSkill(client, cfg.Model)
+		myGmailSkill.Execute(gmailCfg)
 	})
 	schedMgr.RegisterTaskType("backup_knowledge", func() {
 		msg, err := AutoBackupKnowledge()
@@ -140,6 +165,9 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	// 初始化並註冊工具
 	registry := NewRegistry()
 
+	// 注入工具執行器到大腦
+	myBrain.SetTools(registry)
+
 	// 基礎工具
 	registry.Register(&ListFilesTool{})
 	registry.Register(&ShellExecTool{Mgr: bgMgr}) // 傳入背景管理器
@@ -160,7 +188,7 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 
 	// --- 可繼續新增：相關技能工具 ---
 	// 新增 Advisor Skill
-	advisorSkill := skills.NewAdvisorSkill(client, "llama3.3")
+	advisorSkill := skills.NewAdvisorSkill(client, cfg.Model)
 	registry.Register(advisorSkill.CreateTool())
 
 	// 新增 Skill 腳手架建立工具 (Meta-Tool)

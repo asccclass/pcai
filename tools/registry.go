@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ollama/ollama/api"
 )
@@ -35,4 +37,19 @@ func (r *Registry) CallTool(name string, argsJSON string) (string, error) {
 		return "", fmt.Errorf("找不到工具: %s", name)
 	}
 	return tool.Run(argsJSON)
+}
+
+// GetToolPrompt 產生給 LLM 看的工具說明 (Schema)
+func (r *Registry) GetToolPrompt() string {
+	var sb strings.Builder
+	for _, t := range r.tools {
+		def := t.Definition()
+		sb.WriteString(fmt.Sprintf("- 工具: %s\n", def.Function.Name))
+		sb.WriteString(fmt.Sprintf("  描述: %s\n", def.Function.Description))
+		// 將參數定義轉為 JSON 字串供 LLM 參考
+		params, _ := json.Marshal(def.Function.Parameters)
+		sb.WriteString(fmt.Sprintf("  參數Schema: %s\n", string(params)))
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }

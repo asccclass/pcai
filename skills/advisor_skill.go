@@ -27,23 +27,6 @@ type AdvisorTool struct {
 	skill *AdvisorSkill
 }
 
-// Ensure AgentTool interface is implemented
-// var _ tools.AgentTool = (*AdvisorTool)(nil) // We can't import tools here carefully regarding cyclic imports if tools imports skills.
-// Usually interfaces are defined in a common place or tools package.
-// If skills imports tools, and tools imports skills, it's a cycle.
-// Check tools/base.go -> it's in package tools.
-// Check tools/init.go -> imports skills.
-// So skills CANNOT import tools. We must define the Tool struct here, but its methods must satisfy the interface expected by `tools` package.
-// However, the `tools` package expects `AgentTool` interface.
-// If we want to register this in `tools/init.go`, we need to return something that satisfies `AgentTool`.
-// The `AgentTool` interface is in `tools` package.
-// To avoid cyclic dependency:
-// 1. Define AdvisorTool in `tools/` package that holds `AdvisorSkill`. OR
-// 2. Define AdvisorTool in `skills/` but don't import `tools`.
-// The registry expects `AgentTool`. `AgentTool` returns `api.Tool`. `api` is from ollama/api.
-// So `skills` can import `ollama/api` and implement the methods without importing `tools`.
-// That works!
-
 func (s *AdvisorSkill) CreateTool() *AdvisorTool {
 	return &AdvisorTool{skill: s}
 }
