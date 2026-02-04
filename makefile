@@ -21,3 +21,6 @@ install:
 
 test-tools:
 	go test -v ./tools/...
+
+s:
+	git push -u origin main
