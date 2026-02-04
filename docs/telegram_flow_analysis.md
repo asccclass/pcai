@@ -76,3 +76,35 @@
 ---
 **總結流程圖**:
 `Telegram Server` -> `channel.Listen` -> `gateway.Dispatcher` -> `heartbeat.BrainAdapter` -> `heartbeat.PCAIBrain` -> `LLM/Tools` -> `回傳字串` -> `channel.Reply` -> `Telegram User`
+
+## Mermaid 流程圖
+
+```mermaid
+graph TD
+    Start((Telegram Server)) --> Listen[channel.Listen]
+    Listen -->|Long Polling| Loop{接收訊息迴圈}
+    
+    Loop -->|Envelope| Dispatcher[gateway.Dispatcher.HandleMessage]
+    
+    Dispatcher --> Auth{權限/指令檢查}
+    Auth -->|未授權/拒絕| Reply(回覆警告訊息)
+    Auth -->|系統指令| SysCmd[處理系統指令]
+    
+    Auth -->|User Message| Adapter[heartbeat.Adapter.Process]
+    Adapter --> Brain[heartbeat.PCAIBrain.HandleUserChat]
+    
+    Brain --> LLM{LLM 意圖分析}
+    
+    LLM -->|intent: SET_FILTER| Skill[執行 FilterSkill]
+    LLM -->|intent: TOOL_USE| Tool[執行 tools.CallTool]
+    LLM -->|intent: CHAT| Chat[生成聊天回覆]
+    
+    Skill --> Result[整合回覆內容]
+    Tool --> Result
+    Chat --> Result
+    
+    Result --> Adapter
+    Adapter --> Dispatcher
+    Dispatcher --> Reply[channel.Reply]
+    Reply -->|channel.Envelope.Reply| TG_API((Telegram API))
+```
