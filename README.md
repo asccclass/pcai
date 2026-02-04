@@ -1,4 +1,4 @@
-# PCAI (Personal AI CLI)
+# PCAI (Personalized Contextual AI)
 
 **PCAI** 是一個強大的命令行 AI 助手，整合了 Ollama 本地模型、RAG 長期記憶、工具呼叫與 PDF 匯出功能。專為開發者與進階使用者設計，讓 AI 能直接與你的本地環境互動。
 

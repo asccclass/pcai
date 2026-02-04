@@ -86,7 +86,7 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 		log.Fatalf("無法啟動資料庫: %v", err)
 	}
 	// Note: We do NOT close the DB here because it needs to persist for the lifetime of the application.
-	// defer sqliteDB.Close() 
+	// defer sqliteDB.Close()
 
 	// 2. 初始化大腦 (注入資料庫連線)
 	signalURL := "http://localhost:8080/v1/receive/+886912345678"
@@ -116,6 +116,7 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 		}
 	})
 
+	// 建立 Skills
 	// 關鍵修正：在所有 TaskType 註冊完成後，才載入資料庫中的排程
 	if err := schedMgr.LoadJobs(); err != nil {
 		log.Printf("[Scheduler] Failed to load persistent jobs: %v", err)
@@ -158,5 +159,12 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	registry.Register(&SchedulerTool{Mgr: schedMgr})
 
 	// --- 可繼續新增：相關技能工具 ---
+	// 新增 Advisor Skill
+	advisorSkill := skills.NewAdvisorSkill(client, "llama3.3")
+	registry.Register(advisorSkill.CreateTool())
+
+	// 新增 Skill 腳手架建立工具 (Meta-Tool)
+	registry.Register(&CreateSkillTool{})
+
 	return registry
 }

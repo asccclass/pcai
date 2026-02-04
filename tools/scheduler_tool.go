@@ -29,19 +29,18 @@ func (t *SchedulerTool) Definition() api.Tool {
 				var props api.ToolPropertiesMap
 				js := `{
 					"cron_expression": {
-						"Type":        "string",
-						"Description": "Cron 格式字串，例如 '0 8 * * *' 代表每天早上 8 點",
+						"type":        "string",
+						"description": "Cron 格式字串，例如 '0 8 * * *' 代表每天早上 8 點"
 					},
 					"task_type": {
-						"Type":        "string",
-						"Description": "執行的任務類型",
-						"Enum":        []string{"read_email"},
+						"type":        "string",
+						"description": "執行的任務類型",
+						"enum":        ["read_email"]
 					},
 					"task_name": {
-						"Type":        "string",
-						"Description": "任務的簡短名稱，如 'morning_check'",
-					},
-					"required": []string{"cron_expression", "task_type"},
+						"type":        "string",
+						"description": "任務的簡短名稱，如 'morning_check'"
+					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)
 

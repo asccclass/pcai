@@ -1,0 +1,38 @@
+package {{.PackageName}}
+
+import (
+	"fmt"
+	"time"
+)
+
+/*
+ * 由 PCAI 自動生成的業務邏輯檔案
+ * 需求來源: {{.UserRequirement}}
+ */
+
+// {{.StructName}}Data 定義了此技能需要持久化的數據欄位
+type {{.StructName}}Data struct {
+	{{.GeneratedFields}}
+}
+
+// {{.StructName}} 封裝了技能的執行個體
+type {{.StructName}} struct {
+	Data *{{.StructName}}Data
+}
+
+// New{{.StructName}} 建立新的業務邏輯實例
+func New{{.StructName}}(initialData *{{.StructName}}Data) *{{.StructName}} {
+	if initialData == nil {
+		initialData = &{{.StructName}}Data{}
+	}
+	return &{{.StructName}}{
+		Data: initialData,
+	}
+}
+
+{{.GeneratedMethods}}
+
+// GetStatus 回傳目前的業務狀態摘要
+func (s *{{.StructName}}) GetStatus() string {
+	return fmt.Sprintf("技能 {{.StructName}} 目前狀態: %+v", s.Data)
+}

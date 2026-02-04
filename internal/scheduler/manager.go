@@ -49,7 +49,7 @@ type Manager struct {
 	registry map[string]TaskFunc     // 註冊可用的 Cron 任務
 	jobs     map[string]ScheduledJob // 存放已排程的 Cron 任務
 	mu       sync.RWMutex
-	db       *database.DB            // 資料庫連線
+	db       *database.DB // 資料庫連線
 
 	// --- 新增的 Worker Pool 部分 ---
 	bgJobQueue  chan Job       // 即時任務佇列
@@ -123,13 +123,13 @@ func NewManager(brain HeartbeatBrain, db *database.DB) *Manager {
 
 	// 預設註冊：每 20 分鐘執行一次主動心跳決策 (Heartbeat)
 	// 你可以根據需求調整頻率，例如 "@every 5m"
-	m.cron.AddFunc("0 */20 * * * *", func() {
+	m.cron.AddFunc("*/20 * * * *", func() {
 		m.runHeartbeat()
 	})
 
 	// 新增任務：每天早上 07:00 執行晨間簡報
-	// Cron 格式: "秒 分 時 日 月 週"
-	_, err := m.cron.AddFunc("0 0 7 * * *", func() {
+	// Cron 格式: "分 時 日 月 週"
+	_, err := m.cron.AddFunc("0 7 * * *", func() {
 		fmt.Println("[Scheduler] 正在產生晨間簡報...")
 		ctx := context.Background()
 		// 呼叫我們之前實作的簡報功能
@@ -143,7 +143,7 @@ func NewManager(brain HeartbeatBrain, db *database.DB) *Manager {
 		fmt.Printf("[Scheduler] 註冊簡報任務失敗: %v\n", err)
 	}
 	// m.startWorkers()
-	
+
 	return m
 }
 
