@@ -27,7 +27,7 @@ type TelegramChannel struct {
 // NewTelegramChannel 初始化機器人
 func NewTelegramChannel(token string) (*TelegramChannel, error) {
 	// 使用預設配置初始化
-	bot, err := telego.NewBot(token, telego.WithDefaultDebugLogger())
+	bot, err := telego.NewBot(token)
 	if err != nil {
 		return nil, err
 	}

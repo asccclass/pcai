@@ -11,6 +11,7 @@ import (
 
 	"github.com/asccclass/pcai/internal/channel" // 加入
 	"github.com/asccclass/pcai/internal/config"
+	"github.com/asccclass/pcai/internal/core"
 	"github.com/asccclass/pcai/internal/database"
 	"github.com/asccclass/pcai/internal/gateway" // 加入
 	"github.com/asccclass/pcai/internal/gmail"
@@ -72,15 +73,20 @@ func SyncMemory(mem *memory.Manager, filePath string) {
 }
 
 // 全域註冊表實例
-var DefaultRegistry = NewRegistry()
+var DefaultRegistry = core.NewRegistry()
 
 // Init 初始化工具註冊表
-func InitRegistry(bgMgr *BackgroundManager) *Registry {
+func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	home, _ := os.Getwd()
 	// 載入設定
 	cfg := config.LoadConfig()
 
 	// 建立 Ollama API 客戶端
+	// [FIX] 強制使用 PCAI_OLLAMA_URL 覆蓋 OLLAMA_HOST，確保連線到正確的遠端伺服器
+	if pcaiURL := os.Getenv("PCAI_OLLAMA_URL"); pcaiURL != "" {
+		os.Setenv("OLLAMA_HOST", pcaiURL)
+	}
+
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
 		log.Fatal(err)
@@ -102,8 +108,8 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 
 	// --- 新增：Telegram 整合 ---
 	if cfg.TelegramToken != "" {
-		// 1. 建立 Adapter
-		adapter := heartbeat.NewBrainAdapter(myBrain)
+		// 1. 建立 Agent Adapter (支援多用戶 Session)
+		adapter := gateway.NewAgentAdapter(DefaultRegistry, cfg.Model, cfg.SystemPrompt)
 
 		// 2. 建立 Dispatcher
 		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)
@@ -163,7 +169,7 @@ func InitRegistry(bgMgr *BackgroundManager) *Registry {
 	SyncMemory(memManager, mdPath)
 
 	// 初始化並註冊工具
-	registry := NewRegistry()
+	registry := core.NewRegistry()
 
 	// 注入工具執行器到大腦
 	myBrain.SetTools(registry)

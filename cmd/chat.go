@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/asccclass/pcai/internal/agent"
 	"github.com/asccclass/pcai/internal/config"
 	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/llms/ollama"
@@ -59,15 +59,12 @@ func runChat(cmd *cobra.Command, args []string) {
 	GlobalBgMgr = bgMgr // 將實例交給全域指標，讓 health 指令讀得到
 	// 初始化工具
 	registry := tools.InitRegistry(bgMgr)
-	toolDefs := registry.GetDefinitions()
 
 	// 載入 Session 與 RAG 增強
 	sess := history.LoadLatestSession()
 
-	// [FIX] 初始化全域 CurrentSession，否則 CheckAndSummarize 會抓不到
-	history.CurrentSession = sess
 	// [FIX] 啟動時檢查是否需要歸納 (處理「上次關閉後過很久才重開」的情況)
-	history.CheckAndSummarize(modelName, systemPrompt)
+	history.CheckAndSummarize(sess, modelName, systemPrompt)
 
 	// 若歸納後被清空 (Start New Session)，這裡 sess 內容已變，需重新對齊
 	// 但因為 CurrentSession 是指標，上面的 CheckAndSummarize 內修改的就是同一個物件
@@ -78,6 +75,45 @@ func runChat(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("🚀 PCAI Agent 已啟動 ( I'm the assistant your terminal demanded, not the one your sleep schedule requested.)"))
+
+	// -------------------------------------------------------------
+	// 4. 初始化 Agent
+	// -------------------------------------------------------------
+	myAgent := agent.NewAgent(modelName, systemPrompt, sess, registry)
+
+	// 設定 UI 回調 (Bridging Agent Events -> CLI Glamour UI)
+	myAgent.OnGenerateStart = func() {
+		thinkingMsg := lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("AI 正在思考中...")
+		fmt.Print(thinkingMsg)
+	}
+
+	myAgent.OnModelMessageComplete = func(content string) {
+		// 清除「思考中...」提示
+		fmt.Print("\r\033[K")
+
+		if content != "" {
+			// 印出「AI: 」標籤 (不換行)
+			fmt.Print(aiStyle.Render("AI: "))
+			out, _ := renderer.Render(content)
+			// 去除 Glamour 和 AI 內容前後的空白與換行
+			cleanOut := strings.TrimSpace(out)
+			fmt.Print(cleanOut)
+			// 結尾手動補兩個換行，保持與下個提示符的距離
+			fmt.Print("\n\n")
+			clipboard.WriteAll(content)
+		}
+	}
+
+	myAgent.OnToolCall = func(name, args string) {
+		// 這裡確保清除思考提示，因為 Agent 流程中是: GenerateStart -> ChatStream -> MessageComplete(Clear) -> ToolCall
+		// 但如果是連續 ToolCall，可能需要再次清除
+		fmt.Print("\r\033[K")
+
+		toolHint := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
+			fmt.Sprintf("  ↳ 🛠️ Executing %s(%s)...", name, args),
+		)
+		fmt.Println(toolHint)
+	}
 
 	for {
 		// --- 背景任務完成通知推播 ---
@@ -103,85 +139,14 @@ func runChat(cmd *cobra.Command, args []string) {
 
 		// 這裡可以加入處理 /file, /set 等自定義指令的邏輯
 
-		sess.Messages = append(sess.Messages, ollama.Message{Role: "user", Content: input})
-
-		// Tool-Calling 狀態機循環
-		for {
-			var fullResponse strings.Builder
-			thinkingMsg := lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("AI 正在思考中...")
-			fmt.Print(thinkingMsg)
-
-			aiMsg, err := ollama.ChatStream(modelName, sess.Messages, toolDefs, currentOpts, func(content string) {
-				fullResponse.WriteString(content)
-			})
-
-			// 清除「思考中...」提示
-			fmt.Print("\r\033[K")
-
-			if err != nil {
-				fmt.Printf("❌ 錯誤: %v\n", err)
-				break
-			}
-
-			// 顯示 AI 回覆內容 (一次性渲染)
-			if aiMsg.Content != "" {
-				// 印出「AI: 」標籤 (不換行)
-				fmt.Print(aiStyle.Render("AI: "))
-				out, _ := renderer.Render(fullResponse.String())
-				// 去除 Glamour 和 AI 內容前後的空白與換行
-				cleanOut := strings.TrimSpace(out)
-				fmt.Print(cleanOut)
-				// 結尾手動補兩個換行，保持與下個提示符的距離
-				fmt.Print("\n\n")
-				clipboard.WriteAll(fullResponse.String())
-			}
-
-			sess.Messages = append(sess.Messages, aiMsg)
-
-			// 檢查是否呼叫工具
-			if len(aiMsg.ToolCalls) == 0 {
-				break // 最終回答完畢，跳出循環
-			}
-
-			// 執行工具
-			for _, tc := range aiMsg.ToolCalls {
-				argsJSON, _ := json.Marshal(tc.Function.Arguments)
-				// 改用灰色且稍微縮進的樣式
-				toolHint := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(
-					fmt.Sprintf("  ↳ 🛠️ Executing %s(%s)...", tc.Function.Name, string(argsJSON)),
-				)
-				fmt.Println(toolHint)
-
-				result, toolErr := registry.CallTool(tc.Function.Name, string(argsJSON))
-				// --- 強化背景執行的反饋 ---
-				var toolFeedback string
-				if toolErr != nil {
-					toolFeedback = fmt.Sprintf("【執行失敗】：%v", toolErr)
-				} else {
-					// 如果結果包含 "背景啟動"，則給予強大的確認標記
-					if strings.Contains(result, "背景啟動") {
-						aiMsg.ToolCalls = nil // 💡 強制清除，防止 AI 腦袋卡住
-						// toolFeedback = fmt.Sprintf("【SYSTEM】: %s。任務已交給作業系統，請立即停止呼叫工具，並用一句話回報使用者任務已啟動。", result)
-					} else {
-						if tc.Function.Name == "list_tasks" && strings.Contains(result, "沒有任何背景任務") {
-							// 讓 AI 知道現在是空的，讓它發揮創意回答
-							result = "【系統資訊】：當前背景任務清單為空。請以助理身份告知使用者你目前正待命中。"
-						} else {
-							toolFeedback = fmt.Sprintf("【SYSTEM】: %s", result)
-						}
-					}
-				}
-
-				sess.Messages = append(sess.Messages, ollama.Message{
-					Role:    "tool",
-					Content: toolFeedback,
-				})
-			}
-			// 執行完工具，會回到循環頂端再次顯示「思考中...」並請 AI 總結工具結果
+		// 交給 Agent 處理
+		_, err := myAgent.Chat(input, nil) // CLI 暫不使用 Realtime stream raw text，而是依賴 Callbacks 渲染 Markdown
+		if err != nil {
+			fmt.Printf("❌ 錯誤: %v\n", err)
 		}
 
-		// 自動儲存與 RAG 歸納檢查
+		// 自動儲存與 RAG 歸納檢查 (Session 由 Agent 內部維護，直接儲存即可)
 		history.SaveSession(sess)
-		history.CheckAndSummarize(modelName, systemPrompt)
+		history.CheckAndSummarize(sess, modelName, systemPrompt)
 	}
 }

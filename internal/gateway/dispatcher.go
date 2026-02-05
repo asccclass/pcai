@@ -10,7 +10,7 @@ import (
 
 // Processor 介面，未來可以由 AIProcessor 實作
 type Processor interface {
-	Process(input string) string
+	Process(env channel.Envelope) string
 }
 
 // Dispatcher 負責調度訊息與權限控管
@@ -53,7 +53,7 @@ func (d *Dispatcher) HandleMessage(env channel.Envelope) {
 	// 3. 業務邏輯處理 (交給 Processor，例如 AI 或 CMD 工具)
 	// 這裡可以做非同步處理，避免阻塞下一個訊息接收
 	go func() {
-		response := d.processor.Process(env.Content)
+		response := d.processor.Process(env)
 		if response != "" {
 			err := env.Reply(response)
 			if err != nil {

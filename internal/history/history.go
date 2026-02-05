@@ -40,17 +40,17 @@ func ListHistory() {
 
 // CheckAndSummarize 執行閒置歸納邏輯 (RAG 核心)
 // 如果最後更新時間超過一小時，則進行歸納並清理 Session
-func CheckAndSummarize(modelName string, systemPrompt string) {
-	if CurrentSession == nil || len(CurrentSession.Messages) < 2 {
+func CheckAndSummarize(s *Session, modelName string, systemPrompt string) {
+	if s == nil || len(s.Messages) < 2 {
 		return
 	}
 
 	// 判斷是否閒置超過 1 小時
-	if time.Since(CurrentSession.LastUpdate) > 1*time.Hour {
+	if time.Since(s.LastUpdate) > 1*time.Hour {
 		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("\n[系統] 偵測到閒置超過 1 小時，正在將對話歸納至長期記憶..."))
 
 		// 準備歸納用的文本
-		historyText := sessionToText(CurrentSession)
+		historyText := sessionToText(s)
 		summaryPrompt := fmt.Sprintf("請根據以下對話紀錄，精煉出 3-5 個關鍵知識點，以 Markdown 列表格式輸出：\n\n%s", historyText)
 
 		var summaryResult strings.Builder
@@ -68,10 +68,10 @@ func CheckAndSummarize(modelName string, systemPrompt string) {
 			// 存入 knowledge.md
 			if err := saveToKnowledgeBase(summaryResult.String()); err == nil {
 				// 歸納成功後，清空當前訊息流，保留 Context 指標 (或視需求全清)
-				CurrentSession.Messages = []ollama.Message{
+				s.Messages = []ollama.Message{
 					{Role: "system", Content: systemPrompt},
 				}
-				SaveSession(CurrentSession)
+				SaveSession(s)
 				fmt.Println("✨ 歸納完成！已更新 knowledge")
 			}
 		}

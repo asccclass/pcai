@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/ollama/ollama/api"
 )
@@ -60,7 +61,14 @@ func ChatStream(modelName string, messages []Message, tools []api.Tool, opts Opt
 	}
 
 	// 預設 Ollama 位址，可透過設定檔或環境變數擴充
-	resp, err := http.Post("http://172.18.124.210:11434/api/chat", "application/json", bytes.NewBuffer(jsonData))
+	ollamaURL := os.Getenv("PCAI_OLLAMA_URL")
+	if ollamaURL == "" {
+		ollamaURL = "http://172.18.124.210:11434"
+	}
+	// 處理 URL 結尾
+	ollamaURL = strings.TrimSuffix(ollamaURL, "/")
+
+	resp, err := http.Post(ollamaURL+"/api/chat", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return Message{}, fmt.Errorf("連線至 Ollama 失敗: %v", err)
 	}

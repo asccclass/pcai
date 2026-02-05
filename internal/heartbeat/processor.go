@@ -232,8 +232,14 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 }
 
 // HandleUserChat 處理用戶的主動指令（自我學習入口）
-func (b *PCAIBrain) HandleUserChat(ctx context.Context, userInput string) (string, error) {
-	fmt.Printf("[Agent] 正在解析用戶意圖: %s\n", userInput)
+func (b *PCAIBrain) HandleUserChat(ctx context.Context, sessionID string, userInput string) (string, error) {
+	fmt.Printf("[Agent] 正在解析用戶意圖 (Session: %s): %s\n", sessionID, userInput)
+
+	// 嘗試載入對話歷史 (雖然目前 analyzeIntentWithOllama 還沒完全利用它，但先載入以備未來擴充)
+	// sess := history.LoadSession(sessionID)
+	// TODO: 將 sess.Messages 傳入 analyzeIntentWithOllama 或新的 ChatWithHistory 函式
+	// 目前先保持既有邏輯，但已具備 Session 識別能力
+
 	// 讓 Ollama 告訴我們用戶想做什麼
 	intentResp, err := b.analyzeIntentWithOllama(ctx, userInput)
 	if err != nil {
