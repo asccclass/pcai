@@ -2,9 +2,6 @@
 #內建編輯器
 EDITOR=notepad
 
-AIModel=llama3.3
-OllamaHost=
-
 SignalHost=
 SignalNumber=
 
