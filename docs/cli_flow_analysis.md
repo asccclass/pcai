@@ -1,118 +1,82 @@
-# CLI (Command Line) 訊息處理流程分析
+# CLI 訊息處理流程分析
 
-以下是 PCAI 系統處理命令列 (Command Line) 輸入訊息的詳細流程分析。
+詳細分析使用者從命令列 (CLI) 輸入訊息後，系統如何接收、處理並回覆的完整流程。
 
-## 1. 程式啟動與命令解析
+## 1. 啟動與輸入 (CLI Entry)
 
-使用者在終端機輸入 `go run main.go chat` 啟動程式。
+*   **進入點**: `cmd/chat.go` -> `runChat` 函數。
+*   **讀取輸入**: 使用 `bufio.Scanner` 監聽 `os.Stdin` (使用者鍵盤輸入)。
+*   **觸發條件**: 當使用者輸入文字並按下 Enter 後，程式讀取該行字串 (`input`)。
 
-*   **檔案**: `d:\myprograms\pcai\main.go`
-    *   **函數**: `main`
-    *   **說明**: 呼叫 `cmd.Execute()`。
-*   **檔案**: `d:\myprograms\pcai\cmd\root.go`
-    *   **函數**: `Execute`
-    *   **說明**: Cobra 框架解析指令，識別出 `chat` 子指令。
-*   **檔案**: `d:\myprograms\pcai\cmd\chat.go`
-    *   **函數**: `init`
-    *   **說明**: 註冊 `chatCmd`，設定 Flags (如 Model, System Prompt)。
+## 2. 核心調用 (Brain Execution)
 
-## 2. 初始化環境 (Initialization)
+*   **調用者**: `cmd/chat.go`
+*   **方法**: `brain.ProcessUserMessage(ctx, "cli", input, callbacks)`
+*   **參數**:
+    *   `sessionID`: 固定為 `"cli"`，代表這是命令列的工作階段。
+    *   `callbacks`: 定義了 UI 如何顯示「思考中...」以及工具執行的進度。
 
-進入 `chat` 指令的執行邏輯。
+## 3. 訊息前處理 (Processor Pre-processing)
 
-*   **檔案**: `d:\myprograms\pcai\cmd\chat.go`
-*   **函數**: `runChat` (由 `chatCmd.Run` 觸發)
-*   **說明**:
-    1.  **UI 初始化**: 設定 `glamour` 渲染器與 `lipgloss` 樣式。
-    2.  **工具註冊**:
-        *   `bgMgr := tools.NewBackgroundManager()`: 建立背景任務管理器。
-        *   `registry := tools.InitRegistry(bgMgr)`: 初始化並註冊所有工具 (如 `ListFiles`, `ShellExec` 等)。
-        *   `toolDefs := registry.GetDefinitions()`: 取得給 LLM 看的工具定義 (JSON Schema)。
-    3.  **載入記憶**:
-        *   `sess := history.LoadLatestSession()`: 讀取對話歷史。
-        *   `history.CheckAndSummarize(...)`: 檢查是否需要對舊對話進行歸納 (RAG)。
-        *   若為新對話，自動加入 System Prompt。
+*   **檔案**: `internal/heartbeat/processor.go`
+*   **步驟**:
+    1.  **載入歷史**: `history.LoadSession("cli")` 讀取過去的對話紀錄。
+    2.  **系統提示詞注入**: 若為新對話，將 `config.Config` 中的 `SystemPrompt` (包含工具使用說明) 放入對話開頭。
+    3.  **錯字自動修正 (Sanitization)**:
+        *   系統會檢查特定關鍵字並自動修正。
+        *   範例: 將 `目統` 自動替換為 `系統`、`檢察` 替換為 `檢查`。
+        *   目的: 確保 LLM 不會因為錯字而無法識別意圖。
+    4.  **加入訊息**: 將修正後的使用者訊息存入 `Session.Messages`。
 
-## 3. 訊息輸入迴圈 (Input Loop)
+## 4. LLM 思考與生成 (Inference)
 
-程式進入無窮迴圈，等待使用者輸入。
+*   **檔案**: `llms/ollama/client.go` -> `ChatStream`
+*   **動作**: 將完整的對話歷史 (System + User) 發送給 Ollama API。
+*   **工具定義**: 同時發送 `b.tools.GetDefinitions()`，讓 LLM 知道有哪些工具可用 (例如 `list_tasks`)。
 
-*   **檔案**: `d:\myprograms\pcai\cmd\chat.go`
-*   **位置**: `for` 迴圈 (行 82)
-*   **說明**:
-    1.  **顯示提示符**: 印出 `>>> `。
-    2.  **讀取輸入**: `scanner.Scan()` 獲取使用者輸入的文字。
-    3.  **基本指令檢查**: 檢查是否為 `exit` 或 `quit`。
-    4.  **加入歷史**: `sess.Messages = append(..., {Role: "user", Content: input})`。
+## 5. 工具調用分支 (Tool Execution)
 
-## 4. LLM 思考與工具執行 (The "Tool-Calling" Loop)
+若 LLM 判斷需要使用工具 (例如使用者輸入「列出工作」)：
 
-這是一個內層迴圈 (行 109)，負責處理 "思考 -> 執行工具 -> 再思考" 的過城。
+1.  **Ollama 回傳**: `ToolCalls` (包含工具名稱 `list_tasks` 與參數)。
+2.  **Processor 執行**:
+    *   透過 `b.tools.CallTool` 找到對應的 Go 函數 (`tools/list_tasktools.go`)。
+    *   執行工具邏輯 (查詢背景任務、磁碟空間等)。
+    *   取得工具回傳結果 (Result String)。
+3.  **結果回填**: 將工具執行結果以 `role: tool` 的形式加入對話歷史。
+4.  **二次推論**: 將包含工具結果的歷史再次發送給 Ollama，讓它生成最終給使用者的友善回應。
 
-### A. 呼叫 LLM (Thinking)
-*   **函數**: `ollama.ChatStream`
-*   **說明**:
-    *   將完整的 `sess.Messages` (包含歷史對話) 與 `toolDefs` (工具定義) 傳送給 Ollama。
-    *   串流顯示 AI 的回應文字 (Stream Output)。
-    *   **回傳**: `aiMsg` (包含文字內容與可能的 `ToolCalls`)。
+## 6. 結果渲染 (Output Rendering)
 
-### B. 顯示回應
-*   使用 `glamour` 渲染器將 Markdown 格式的回應美化並印出。
-*   將 `aiMsg` 加入 `sess.Messages`。
-
-### C. 執行工具 (Tool Execution)
-*   **判斷**: 檢查 `len(aiMsg.ToolCalls) > 0`。若無工具呼叫，跳出內層迴圈 (等待使用者下次輸入)。
-*   **執行**:
-    *   遍歷每一個 `ToolCall`。
-    *   **執行函數**: `registry.CallTool(tc.Function.Name, argsJSON)` (位於 `tools/registry.go`)。
-    *   **顯示狀態**: 印出 `🛠️ Executing...` 提示。
-    *   **取得結果**: 獲取工具執行後的純文字結果 (或錯誤訊息)。
-*   **反饋**:
-    *   將工具執行的結果封裝為 `Tool Message` (`Role: "tool"`).
-    *   `sess.Messages = append(...)` 加入歷史紀錄。
-*   **遞迴**: 內層迴圈繼續執行，回到 **步驟 A**。
-    *   *為什麼？* 因為將工具結果丟回給 LLM 後，LLM 需要根據結果再次生成最終回答 (或決定呼叫下一個工具)。
-
-## 5. 自動存檔 (Auto-Save)
-
-當一輪對話 (使用者輸入 -> AI 回答/工具執行完畢) 結束後。
-
-*   **說明**:
-    *   `history.SaveSession(sess)`: 將最新的對話紀錄寫入檔案。
-    *   `history.CheckAndSummarize(...)`: 再次檢查是否累積過多對話需要歸納。
+*   **動作**: `ProcessUserMessage` 回傳最終的 Markdown 字串。
+*   **渲染器**: `cmd/chat.go` 使用 `glamour` 套件。
+*   **顯示**: 將 Markdown 字串轉換為帶有顏色的終端機格式並印出。
+*   **剪貼簿**: 自動將回應內容寫入系統剪貼簿。
 
 ---
-**總結流程圖**:
-`User Input` -> `cmd.runChat` -> `History Append` -> `Loop Start`
-   -> `ollama.ChatStream` (Think)
-   -> `Check ToolCalls?`
-      -> **No**: `Print Response` -> `Save Session` -> `Wait User Input`
-      -> **Yes**: `registry.CallTool` (Act) -> `Append Tool Result` -> `Loop Continue` (Re-think)
 
 ## Mermaid 流程圖
 
 ```mermaid
 graph TD
-    Start([程式啟動]) --> Init[cmd.runChat 初始化]
-    Init --> InputLoop{進入輸入迴圈}
+    User([User Input]) -->|Enter| CLI[cmd/chat.go: runChat]
+    CLI -->|Sanitized Input| Brain[heartbeat.ProcessUserMessage]
     
-    InputLoop -->|等待輸入| UserInput[/使用者輸入/]
-    UserInput -->|scanner.Scan| CheckExit{檢查是否退出?}
+    subgraph Brain Processing
+        Brain -->|Inject| SysPrompt{System Prompt}
+        Brain -->|Fix Typo| Sanitize(目統 -> 系統)
+        Sanitize --> History[(Session History)]
+        History --> Ollama((Ollama API))
+    end
     
-    CheckExit -->|Yes| End([結束程式])
-    CheckExit -->|No| AppendHist[加入對話歷史]
+    Ollama -->|Decision| ToolCheck{Need Tool?}
     
-    AppendHist --> InnerLoop{工具呼叫迴圈}
+    ToolCheck -->|Yes| ToolExec[Execute Tool\ne.g. list_tasks]
+    ToolExec -->|Result| History
+    ToolExec --> Ollama
     
-    InnerLoop -->|1. 思考中...| LLM[呼叫 ollama.ChatStream]
-    LLM --> CheckTool{是否呼叫工具?}
+    ToolCheck -->|No| FinalResp[Generate Response]
     
-    CheckTool -->|No - 最終回答| Display[顯示 AI 回應]
-    Display --> Save[自動存檔與 RAG 歸納]
-    Save --> InputLoop
-    
-    CheckTool -->|Yes - 需要執行| ExecTool[執行 registry.CallTool]
-    ExecTool --> ToolResult[/取得工具執行結果/]
-    ToolResult --> AppendToolMsg[加入工具結果至歷史]
-    AppendToolMsg --> InnerLoop
+    FinalResp --> Renderer[Glamour Renderer]
+    Renderer --> Console((Terminal Output))
 ```
