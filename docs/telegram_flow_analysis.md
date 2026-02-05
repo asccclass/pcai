@@ -1,110 +1,100 @@
-# Telegram 訊息處理流程分析
+# Telegram 訊息處理流程分析 (Updated)
 
-以下是 PCAI 系統處理 Telegram 訊息的詳細流程分析，從程式啟動到訊息回覆的完整步驟。
+詳細分析使用者從 Telegram 發送訊息後，系統如何透過 Gateway、Brain 與 LLM 進行處理與回覆的完整流程。
 
-## 1. 系統初始化 (Initialization)
+## 1. 訊息監聽與接收 (Channel Listening)
 
-在程式啟動時，會初始化 Telegram Channel 並建立連結。
+*   **檔案**: `internal/channel/telegram.go`
+*   **機制**: Long Polling (長輪詢) + 自動重連機制。
+*   **流程**:
+    1.  `Listen` 函數啟動無限迴圈。
+    2.  呼叫 `bot.UpdatesViaLongPolling` 等待 Telegram 伺服器推播訊息。
+    3.  **Robustness (強健性)**: 若連線斷開，系統會記錄錯誤並等待 5 秒後自動重試，確保服務不中斷。
+    4.  **篩選**: 只處理文字訊息，過濾掉非文字更新。
+    5.  **封裝**: 將訊息封裝為統一的 `Envelope` 結構 (包含 `Reply` callback)，屏蔽底層 API 細節。
 
-*   **檔案**: `d:\myprograms\pcai\tools\init.go`
-*   **函數**: `InitRegistry`
-*   **說明**:
-    1.  檢查 `cfg.TelegramToken` 是否存在。
-    2.  建立 `BrainAdapter` (連結大腦)。
-    3.  建立 `Dispatcher` (訊息調度員)。
-    4.  建立 `TelegramChannel`。
-    5.  啟動 Goroutine 執行 `tgChannel.Listen(dispatcher.HandleMessage)`，開始背景監聽。
+## 2. 網關調度與權限 (Gateway Dispatching)
 
-## 2. 接收訊息 (Listening)
+*   **檔案**: `internal/gateway/dispatcher.go`
+*   **流程**:
+    1.  `HandleMessage` 接收 `Envelope`。
+    2.  **Authentication (權限檢查)**:
+        *   檢查 `env.SenderID` 是否在白名單 (`authorizedUsers`) 中。
+        *   若未授權，記錄詳細日誌 (包含當前白名單內容) 並回覆拒絕訊息。
+    3.  **System Commands**: 檢查是否為 `/` 開頭的系統指令 (如 `/auth`)。
+    4.  **Forwarding**: 若通過檢查，啟動 Goroutine 將訊息轉發給 Processor。
 
-透過 Long Polling 方式從 Telegram 伺服器接收訊息。
+## 3. 核心處理 (Brain Processing)
 
-*   **檔案**: `d:\myprograms\pcai\internal\channel\telegram.go`
-*   **函數**: `Listen`
-*   **說明**:
-    1.  呼叫 `t.bot.UpdatesViaLongPolling` 持續接收更新。
-    2.  在 `for update := range updates` 迴圈中處理每一則訊息。
-    3.  提取訊息內容 (`msg.Text`) 與發送者 ID (`msg.Chat.ID`)。
-    4.  將訊息封裝成 `Envelope` 結構 (包含統一的 `Reply` 方法)。
-    5.  呼叫 `handler(env)`，此處的 handler 即為 `Dispatcher.HandleMessage`。
+*   **檔案**: `internal/heartbeat/processor.go`
+*   **流程**:
+    1.  `Adapter.Process` 呼叫 `processUserMessage`。
+    2.  **Session Loading**: 讀取該使用者的對話歷史 (`sessionID` 為 Telegram Chat ID)。
+    3.  **System Prompt Injection**:
+        *   若為新對話，從 `config` 注入全域設定的 `System Prompt`。
+        *   這確保了 LLM 知道如何使用工具以及遵守行為準則 (包含容錯指示)。
+    4.  **Input Sanitization (輸入淨化)**:
+        *   **關鍵修正**: 在送給 AI 之前，程式碼會先進行「硬修正」。
+        *   例如：將 `目統` 強制替換為 `系統`，`檢察` 替換為 `檢查`。
+        *   這解決了語音輸入或錯字導致 LLM 無法觸發工具的問題。
 
-## 3. 訊息調度與權限檢查 (Dispatcher)
+## 4. LLM 推論與工具執行 (Inference & Tooling)
 
-統一的入口點，負責初步篩選與權限控管。
+*   **檔案**: `llms/ollama/client.go`
+*   **流程**:
+    1.  將修正後的訊息與對話歷史發送給 Ollama。
+    2.  **Tool Decision**: LLM 判斷是否需要呼叫工具 (例如 `list_tasks`)。
+    3.  **Tool Execution**:
+        *   Processor 接收 `ToolCalls`。
+        *   執行對應的 Go 函數 (如查詢排程、資料庫)。
+        *   將結果以 `role: tool` 寫回歷史。
+    4.  **Final Response**: LLM 根據工具結果生成最終的自然語言回覆。
 
-*   **檔案**: `d:\myprograms\pcai\internal\gateway\dispatcher.go`
-*   **函數**: `HandleMessage`
-*   **說明**:
-    1.  **權限檢查**: 呼叫 `isAuthorized(env.SenderID)` 檢查發送者是否在白名單內。若否，直接回覆拒絕訊息。
-    2.  **系統指令**: 檢查是否為 `/` 開頭的指令 (例如 `/auth`)，若是則呼叫 `handleSystemCommand` 處理。
-    3.  **轉發處理**: 若通過檢查且非系統指令，啟動 Goroutine 呼叫 `d.processor.Process(env.Content)` (即 `Adapter` 的 `Process` 方法)。
-
-## 4. 介面轉接 (Adapter)
-
-將 Gateway 的呼叫轉換為 Brain 能理解的呼叫。
-
-*   **檔案**: `d:\myprograms\pcai\internal\heartbeat\adapter.go`
-*   **函數**: `Process`
-*   **說明**:
-    1.  建立 `context.Background()`。
-    2.  直接呼叫核心邏輯 `a.brain.HandleUserChat(ctx, input)`。
-
-## 5. 大腦意圖分析與執行 (Brain Processing)
-
-核心邏輯層，使用 LLM 分析語意並執行對應動作。
-
-*   **檔案**: `d:\myprograms\pcai\internal\heartbeat\processor.go`
-*   **函數**: `HandleUserChat`
-*   **說明**:
-    1.  **意圖分析**: 呼叫 `analyzeIntentWithOllama` (使用 LLM) 分析用戶輸入，判斷意圖 (`intent`)。
-    2.  **執行分支**:
-        *   **`SET_FILTER`**: 呼叫 `b.filterSkill.Execute` 更新過濾規則資料庫 (自我學習)。
-        *   **`TOOL_USE`**: 透過 `b.tools.CallTool` (位於 `tools/registry.go`) 執行實際工具 (如查詢檔案、搜尋知識庫)。
-        *   **`CHAT`**: 單純對話，直接回傳 LLM 生成的回覆 (`intentResp.Reply`)。
-
-## 6. 回覆訊息 (Reply)
-
-將處理結果回傳給使用者。
+## 5. 回覆推送 (Reply Dispatch)
 
 *   **流程**:
-    1.  `HandleUserChat` 回傳結果字串給 `Adapter.Process`。
-    2.  `Adapter.Process` 回傳給 `Dispatcher` 的 Goroutine。
-    3.  `Dispatcher` 呼叫 `env.Reply(response)`。
-*   **底層實作**: `d:\myprograms\pcai\internal\channel\telegram.go`
-    *   `Reply` 閉包函數內呼叫 `t.bot.SendMessage`，將文字推送到 Telegram。
+    1.  Processor 回傳最終字串。
+    2.  Dispatcher 透過 `env.Reply` 回調函數。
+    3.  `TelegramChannel` 呼叫 `bot.SendMessage` 將訊息推送到 Telegram App。
 
 ---
-**總結流程圖**:
-`Telegram Server` -> `channel.Listen` -> `gateway.Dispatcher` -> `heartbeat.BrainAdapter` -> `heartbeat.PCAIBrain` -> `LLM/Tools` -> `回傳字串` -> `channel.Reply` -> `Telegram User`
 
 ## Mermaid 流程圖
 
 ```mermaid
 graph TD
-    Start((Telegram Server)) --> Listen[channel.Listen]
-    Listen -->|Long Polling| Loop{接收訊息迴圈}
+    User((Telegram User)) -->|Message| TG_API[Telegram Server]
     
-    Loop -->|Envelope| Dispatcher[gateway.Dispatcher.HandleMessage]
+    subgraph "System Boundary (PCAI)"
+        TG_API -->|Long Polling| Channel[channel/telegram.go: Listen]
+        
+        Channel -->|Reconnect Loop| Channel
+        Channel -->|Envelope| Gateway[gateway/dispatcher.go]
+        
+        Gateway --> Auth{Authorized?}
+        Auth -->|No| Reject[Log & Reply Refusal]
+        
+        Auth -->|Yes| Adapter[heartbeat/adapter.go]
+        Adapter --> Brain[heartbeat/processor.go]
+        
+        subgraph "Brain Core"
+            Brain -->|Inject| SysPrompt{System Prompt}
+            Brain -->|Fix Typo| Sanitize(目統 -> 系統)
+            Sanitize --> History[(Session History)]
+            History --> Ollama((Ollama API))
+        end
+        
+        Ollama -->|Decision| ToolCheck{Need Tool?}
+        
+        ToolCheck -->|Yes| ToolExec[Execute Tool]
+        ToolExec -->|Result| History
+        ToolExec --> Ollama
+        
+        ToolCheck -->|No| FinalResp[Generate Response]
+    end
     
-    Dispatcher --> Auth{權限/指令檢查}
-    Auth -->|未授權/拒絕| Reply(回覆警告訊息)
-    Auth -->|系統指令| SysCmd[處理系統指令]
-    
-    Auth -->|User Message| Adapter[heartbeat.Adapter.Process]
-    Adapter --> Brain[heartbeat.PCAIBrain.HandleUserChat]
-    
-    Brain --> LLM{LLM 意圖分析}
-    
-    LLM -->|intent: SET_FILTER| Skill[執行 FilterSkill]
-    LLM -->|intent: TOOL_USE| Tool[執行 tools.CallTool]
-    LLM -->|intent: CHAT| Chat[生成聊天回覆]
-    
-    Skill --> Result[整合回覆內容]
-    Tool --> Result
-    Chat --> Result
-    
-    Result --> Adapter
-    Adapter --> Dispatcher
-    Dispatcher --> Reply[channel.Reply]
-    Reply -->|channel.Envelope.Reply| TG_API((Telegram API))
+    FinalResp --> Gateway
+    Gateway -->|env.Reply| Channel
+    Channel -->|SendMessage| TG_API
+    TG_API --> User
 ```
