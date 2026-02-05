@@ -12,7 +12,7 @@ import (
 func AutoBackupKnowledge() (string, error) {
 	home, _ := os.Getwd()
 	sourcePath := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	backupDir := filepath.Join(home, "botmemory", "backup", "backups")
+	backupDir := filepath.Join(home, "botmemory", "backup")
 
 	// 1. 檢查原始檔案是否存在
 	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/asccclass/pcai/internal/core"
 	"github.com/asccclass/pcai/internal/history"
+	"github.com/asccclass/pcai/llms"
 	"github.com/asccclass/pcai/llms/ollama"
 )
 
@@ -17,6 +18,7 @@ type Agent struct {
 	SystemPrompt string
 	Registry     *core.Registry
 	Options      ollama.Options
+	Provider     llms.ChatStreamFunc // [NEW] 抽象化的 Provider
 
 	// Callbacks for UI interaction
 	OnGenerateStart        func()
@@ -26,12 +28,26 @@ type Agent struct {
 
 // NewAgent 建立一個新的 Agent 實例
 func NewAgent(modelName, systemPrompt string, session *history.Session, registry *core.Registry) *Agent {
+	// 預設使用 Ollama
+	defaultProvider, _ := llms.GetProviderFunc("ollama")
+
 	return &Agent{
 		Session:      session,
 		ModelName:    modelName,
 		SystemPrompt: systemPrompt,
 		Registry:     registry,
-		Options:      ollama.Options{Temperature: 0.7, TopP: 0.9}, // 預設參數
+		Options:      ollama.Options{Temperature: 0.7, TopP: 0.9},
+		Provider:     defaultProvider,
+	}
+}
+
+// SetModelConfig update the model and provider dynamically
+func (a *Agent) SetModelConfig(modelName string, provider llms.ChatStreamFunc) {
+	if modelName != "" {
+		a.ModelName = modelName
+	}
+	if provider != nil {
+		a.Provider = provider
 	}
 }
 
@@ -53,8 +69,12 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			a.OnGenerateStart()
 		}
 
-		// 呼叫 Ollama 進行對話串流
-		aiMsg, err := ollama.ChatStream(
+		// 呼叫 Provider 進行對話串流 (不再寫死 ollama.ChatStream)
+		if a.Provider == nil {
+			return "", fmt.Errorf("Agent Provider 未設定")
+		}
+
+		aiMsg, err := a.Provider(
 			a.ModelName,
 			a.Session.Messages,
 			toolDefs,

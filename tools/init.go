@@ -106,25 +106,6 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	// 初始化排程管理器(Hybrid Manager)
 	myBrain := heartbeat.NewPCAIBrain(sqliteDB, signalURL, cfg.Model)
 
-	// --- 新增：Telegram 整合 ---
-	if cfg.TelegramToken != "" {
-		// 1. 建立 Agent Adapter (支援多用戶 Session)
-		adapter := gateway.NewAgentAdapter(DefaultRegistry, cfg.Model, cfg.SystemPrompt)
-
-		// 2. 建立 Dispatcher
-		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)
-
-		// 3. 建立 Telegram Channel
-		tgChannel, err := channel.NewTelegramChannel(cfg.TelegramToken)
-		if err != nil {
-			log.Printf("⚠️ 無法啟動 Telegram Channel: %v", err)
-		} else {
-			// 4. 啟動監聽 (非同步)
-			go tgChannel.Listen(dispatcher.HandleMessage)
-			log.Println("✅ Telegram Channel 已啟動並連接至 Gateway")
-		}
-	}
-
 	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
 
 	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
@@ -197,8 +178,42 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	advisorSkill := skills.NewAdvisorSkill(client, cfg.Model)
 	registry.Register(advisorSkill.CreateTool())
 
+	// [NEW] 載入動態技能 (skills.md)
+	skillsPath := filepath.Join(home, "skills", "skills.md")
+	dynamicSkills, err := skills.LoadSkills(skillsPath)
+	if err != nil {
+		log.Printf("[Skills] 無法載入 skills.md: %v", err)
+	} else {
+		for _, ds := range dynamicSkills {
+			toolStr := skills.NewDynamicTool(ds)
+			registry.Register(toolStr)
+			log.Printf("[Skills] 已註冊動態技能: %s", toolStr.Name())
+		}
+	}
+
 	// 新增 Skill 腳手架建立工具 (Meta-Tool)
 	registry.Register(&CreateSkillTool{})
+
+	// --- 新增：Telegram 整合 ---
+	// [FIX] 移動到這裡，確保 registry 已經註冊完所有工具
+	if cfg.TelegramToken != "" {
+		// 1. 建立 Agent Adapter (支援多用戶 Session)
+		// 注意：這裡改成使用傳入區域變數 registry (已經包含所有工具)
+		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt)
+
+		// 2. 建立 Dispatcher
+		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)
+
+		// 3. 建立 Telegram Channel
+		tgChannel, err := channel.NewTelegramChannel(cfg.TelegramToken)
+		if err != nil {
+			log.Printf("⚠️ 無法啟動 Telegram Channel: %v", err)
+		} else {
+			// 4. 啟動監聽 (非同步)
+			go tgChannel.Listen(dispatcher.HandleMessage)
+			log.Println("✅ Telegram Channel 已啟動並連接至 Gateway")
+		}
+	}
 
 	return registry
 }

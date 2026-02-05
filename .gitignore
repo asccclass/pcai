@@ -1,7 +1,9 @@
 *.exe
 *.old
 *.txt
+*.x
 credentials.json
 token.json
 botmemory/backup/*
 envfile
+botmemory/backup/*

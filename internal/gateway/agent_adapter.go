@@ -8,8 +8,10 @@ import (
 	"github.com/asccclass/pcai/internal/channel"
 	"github.com/asccclass/pcai/internal/core"
 	"github.com/asccclass/pcai/internal/history"
+	"github.com/asccclass/pcai/llms/ollama"
 )
 
+// AgentAdapter 負責管理多個 Telegram 使用者的 Agent 實例
 // AgentAdapter 負責管理多個 Telegram 使用者的 Agent 實例
 type AgentAdapter struct {
 	agents       map[string]*agent.Agent
@@ -17,6 +19,7 @@ type AgentAdapter struct {
 	modelName    string
 	systemPrompt string
 	mu           sync.Mutex
+	router       *Router // [NEW] 引入路由
 }
 
 // NewAgentAdapter 建立新的 Adapter
@@ -26,6 +29,7 @@ func NewAgentAdapter(registry *core.Registry, modelName, systemPrompt string) *A
 		registry:     registry,
 		modelName:    modelName,
 		systemPrompt: systemPrompt,
+		router:       NewRouter(modelName), // 初始化路由，並以傳入的 model 作為預設
 	}
 }
 
@@ -36,6 +40,16 @@ func (a *AgentAdapter) Process(env channel.Envelope) string {
 
 	// 取得或建立 Agent
 	myAgent := a.getOrCreateAgent(sessionID)
+
+	// [NEW] 動態路由決策
+	// 在每次對話前，先問 Router 這次該用誰
+	routeResult, err := a.router.Route(env.Content)
+	if err == nil {
+		// 動態切換 Agent 的腦袋
+		// 這裡假設 Agent 是同一個實例，但在這一輪對話中臨時切換配置
+		// 注意：如果底層 history 是共用的，這樣做沒問題。
+		myAgent.SetModelConfig(routeResult.ModelName, routeResult.Provider)
+	}
 
 	// 呼叫 Agent 進行對話
 	// 注意：這裡暫時不使用 stream callback (傳 nil)，因為 Telegram API 通常是一次性回覆
@@ -71,12 +85,8 @@ func (a *AgentAdapter) getOrCreateAgent(sessionID string) *agent.Agent {
 
 	// 如果是新 Session (只有 ID)，補上 System Prompt
 	if len(session.Messages) == 0 {
-		// 這裡可以加入 RAG Prompt
-		// 為了簡化，暫時只加 System Prompt
-		// 若要完整複刻 CLI 行為，應呼叫 history.GetRAGEnhancedPrompt()
-		// 但該函數目前未導出或需確認位置
-		// 假設我們簡單處理:
-		// session.Messages = append(session.Messages, ollama.Message{Role: "system", Content: a.systemPrompt})
+		// 這裡必須注入 System Prompt，否則 Telegram 用戶無法得知工具定義與使用規範
+		session.Messages = append(session.Messages, ollama.Message{Role: "system", Content: a.systemPrompt})
 	}
 	// [Note] NewAgent 內部不會自動加 System Prompt 到 Messages，它只是存起來
 	// 真正決定是否加 System Prompt 是在 Session 初始化階段

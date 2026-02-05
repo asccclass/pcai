@@ -92,17 +92,48 @@ func (s *GmailSkill) Execute(cfg gmail.FilterConfig) {
 }
 
 func (s *GmailSkill) saveToKnowledge(summary string) {
-	timestamp := time.Now().Format("2006-01-02 15:04")
-	content := fmt.Sprintf("\n\n## 📝 自動郵件歸納: %s\n%s\n", timestamp, summary)
-
 	home, _ := os.Getwd()
 	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+	// 1. 檢查是否重複 (讀取最後 4096 bytes)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		log.Printf("[GmailSkill Error] 無法寫入知識庫: %v", err)
+		log.Printf("[GmailSkill Error] 無法讀取知識庫: %v", err)
 		return
 	}
 	defer f.Close()
+
+	stat, _ := f.Stat()
+	fileSize := stat.Size()
+
+	// 只讀取最後 5KB 進行比對
+	readSize := int64(5120)
+	if fileSize < readSize {
+		readSize = fileSize
+	}
+
+	if readSize > 0 {
+		buf := make([]byte, readSize)
+		f.Seek(-readSize, 2)
+		f.Read(buf)
+
+		existingContent := string(buf)
+		// 簡單比對: 如果新摘要的內容 (去除 timestamp 前綴後的核心內容) 已經存在，就跳過
+		// 這裡假設 summary 內容足夠獨特。
+		// 為了避免因時間戳記不同而誤判，我們可以比對 summary 的後段或核心句子。
+		// 這裡做一個簡單的 substring check。
+		if strings.Contains(existingContent, summary) {
+			log.Println("⚠️ [GmailSkill] 摘要已存在，跳過寫入 (Deduplicated)")
+			return
+		}
+	}
+
+	// 2. 寫入
+	timestamp := time.Now().Format("2006-01-02 15:04")
+	content := fmt.Sprintf("\n\n## 📝 自動郵件歸納: %s\n%s\n", timestamp, summary)
+
+	// 移動到檔尾準備寫入
+	f.Seek(0, 2)
 	f.WriteString(content)
 	log.Println("✅ [GmailSkill] 摘要已存入 Knowledge")
 }

@@ -53,7 +53,7 @@ func FetchLatestEmails(cfg FilterConfig) (string, error) {
 		return "", fmt.Errorf("無法讀取 credentials.json: %v", err)
 	}
 
-	// 2. 配置 OAuth2
+	// 2. 配置 OAuth2 .GmailModifyScope
 	config, err := google.ConfigFromJSON(b, gmail.GmailReadonlyScope)
 	if err != nil {
 		return "", fmt.Errorf("解析憑證失敗: %v", err)
@@ -94,6 +94,8 @@ func fetchAndFilter(srv *gmail.Service, cfg FilterConfig) (string, error) {
 	}
 
 	var result strings.Builder
+	var matchedIDs []string // 收集符合條件的郵件 ID
+
 	for _, m := range r.Messages {
 		// 取得郵件詳細內容 (Metadata 模式較省流量)
 		msg, err := srv.Users.Messages.Get(user, m.Id).Format("metadata").Do()
@@ -122,10 +124,19 @@ func fetchAndFilter(srv *gmail.Service, cfg FilterConfig) (string, error) {
 		}
 
 		if match {
+			matchedIDs = append(matchedIDs, m.Id) // 加入待標記清單
+
 			result.WriteString(fmt.Sprintf("【寄件者】: %s\n", from))
 			result.WriteString(fmt.Sprintf("【主旨】: %s\n", subject))
 			result.WriteString(fmt.Sprintf("【內容摘要】: %s\n", msg.Snippet))
 			result.WriteString("------------------------------------------\n")
+		}
+	}
+
+	// 標記已處理的郵件為已讀
+	if len(matchedIDs) > 0 {
+		if err := MarkAsRead(srv, matchedIDs); err != nil {
+			log.Printf("⚠️ 標記已讀失敗: %v", err)
 		}
 	}
 
