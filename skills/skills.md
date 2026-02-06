@@ -9,3 +9,7 @@ Command: sudo apt-get update && sudo apt-get upgrade -y
 ## PythonScript
 Description: 執行特定的 Python 數據處理腳本。
 Command: docker run --rm -v $(pwd):/app python:3.9 python /app/script.py "{{args}}"
+
+## listDir
+Description: 列出指定目錄下的所有檔案和資料夾。
+Command: dir/w {{args}}

@@ -30,7 +30,7 @@ func NewAgent(systemPrompt string) *ReActAgent {
 	// 從環境變數讀取配置，若無則使用預設值
 	model := os.Getenv("MODEL_NAME")
 	if model == "" {
-		model = "llama3" // 預設模型
+		model = "llama3.3" // 預設模型
 	}
 
 	endpoint := os.Getenv("OLLAMA_URL")

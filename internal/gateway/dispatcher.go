@@ -53,12 +53,25 @@ func (d *Dispatcher) HandleMessage(env channel.Envelope) {
 	// 3. 業務邏輯處理 (交給 Processor，例如 AI 或 CMD 工具)
 	// 這裡可以做非同步處理，避免阻塞下一個訊息接收
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Dispatcher] Panic recovered: %v", r)
+			}
+		}()
+
+		log.Printf("[Dispatcher] Processing message from %s...", env.SenderID)
 		response := d.processor.Process(env)
+		log.Printf("[Dispatcher] Got response for %s (len: %d)", env.SenderID, len(response))
+
 		if response != "" {
 			err := env.Reply(response)
 			if err != nil {
-				log.Printf("回覆發送失敗: %v", err)
+				log.Printf("[Dispatcher] 回覆發送失敗: %v", err)
+			} else {
+				log.Printf("[Dispatcher] Reply sent successfully to %s", env.SenderID)
 			}
+		} else {
+			log.Printf("[Dispatcher] Empty response, skipping reply.")
 		}
 	}()
 }

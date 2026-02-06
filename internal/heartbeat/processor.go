@@ -64,7 +64,7 @@ func (b *PCAIBrain) SetTools(executor ToolExecutor) {
 func NewPCAIBrain(db *database.DB, apiUrl, modelName string) *PCAIBrain {
 	return &PCAIBrain{
 		db:          db,
-		httpClient:  resty.New().SetTimeout(10 * time.Second).SetRetryCount(2),
+		httpClient:  resty.New().SetTimeout(100 * time.Second).SetRetryCount(2),
 		signalAPI:   apiUrl,
 		modelName:   modelName,
 		filterSkill: skills.NewFilterSkill(db),
@@ -203,6 +203,7 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 			"model":  b.modelName,
 			"prompt": prompt,
 			"stream": false,
+			"format": "json",
 		}).
 		SetResult(&result).
 		Post("http://172.18.124.210:11434/api/generate")
@@ -217,10 +218,16 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 
 	// 3. 清理回傳字串（移除 AI 可能多加的空格或換行）
 	decision := strings.TrimSpace(result.Response)
+	if decision == "" {
+		return "", fmt.Errorf("Ollama 回傳內容為空")
+	}
+
 	// 解析 JSON 結果
 	var dec HeartbeatDecision
 	if err := json.Unmarshal([]byte(decision), &dec); err != nil {
-		return "", fmt.Errorf("解析決策 JSON 失敗: %v", err)
+		// 容錯：如果是因為超時或其他原因導致回傳了非 JSON 字串 (例如 HTML 錯誤頁面)
+		// 我們記錄錯誤但不讓程式崩潰 (雖然這裡 return err 會被上層 recover，或是 log print)
+		return "", fmt.Errorf("解析決策 JSON 失敗: %v (原始內容: %.20s...)", err, decision)
 	}
 
 	// 核心：將思考過程存入資料庫

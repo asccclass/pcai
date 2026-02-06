@@ -32,6 +32,3 @@
 ## 📝 自動郵件歸納: 2026-02-05 20:40
 [無URGENT標籤]
 郵件重點：富邦人壽通知收件人劉＊漢關於其保單帳戶價值，並提供附件檔案供其下載查看，同時邀請下載富邦人壽APP以便線上查詢保單內容。
-
-
-The API Key for the project is 4/0ASc3gC353qzVyG_Q4qdegbq1e9u16cq8z7BdrU_ojjqg4dOhKQl5z7INcWuZxWDZx0znSQ

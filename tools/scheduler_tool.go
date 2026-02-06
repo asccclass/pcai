@@ -24,13 +24,18 @@ func (t *SchedulerTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        t.Name(),
-			Description: "設定定時背景任務。例如『每天早上8點讀取郵件』。時間需轉換為 Cron 格式 (分 時 日 月 週)。",
+			Description: "設定或取消定時背景任務。例如『每天早上8點讀取郵件』或『取消讀取郵件的任務』。時間需轉換為 Cron 格式 (分 時 日 月 週)。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
+					"action": {
+						"type":        "string",
+						"description": "執行動作: 'add' (新增/更新) 或 'remove' (移除)",
+						"enum":        ["add", "remove"]
+					},
 					"cron_expression": {
 						"type":        "string",
-						"description": "Cron 格式字串，例如 '0 8 * * *' 代表每天早上 8 點"
+						"description": "Cron 格式字串，例如 '0 8 * * *' 代表每天早上 8 點。移除任務時可為空。"
 					},
 					"task_type": {
 						"type":        "string",
@@ -47,7 +52,7 @@ func (t *SchedulerTool) Definition() api.Tool {
 				return api.ToolFunctionParameters{
 					Type:       "object",
 					Properties: &props,
-					Required:   []string{"cron_expression", "task_type"},
+					Required:   []string{"task_type", "action"},
 				}
 			}(),
 		},
@@ -57,6 +62,7 @@ func (t *SchedulerTool) Definition() api.Tool {
 // Run 滿足 AgentTool 介面，解析 Ollama 傳入的 JSON 參數
 func (t *SchedulerTool) Run(argsJSON string) (string, error) {
 	var args struct {
+		Action   string `json:"action"`
 		CronExpr string `json:"cron_expression"`
 		TaskType string `json:"task_type"`
 		TaskName string `json:"task_name"`
@@ -73,6 +79,24 @@ func (t *SchedulerTool) Run(argsJSON string) (string, error) {
 
 	if args.TaskName == "" {
 		args.TaskName = fmt.Sprintf("auto_job_%s", actualTaskType)
+	}
+
+	// 預設 action 為 add
+	if args.Action == "" {
+		args.Action = "add"
+	}
+
+	if args.Action == "remove" {
+		err := t.Mgr.RemoveJob(args.TaskName)
+		if err != nil {
+			return "", fmt.Errorf("failed to remove job: %v", err)
+		}
+		return fmt.Sprintf("【SYSTEM】已移除背景任務, ID: %s", args.TaskName), nil
+	}
+
+	// Add logic
+	if args.CronExpr == "" {
+		return "", fmt.Errorf("cron_expression is required for add action")
 	}
 
 	err := t.Mgr.AddJob(args.TaskName, args.CronExpr, actualTaskType, "Created via Tool")

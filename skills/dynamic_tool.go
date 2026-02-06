@@ -150,11 +150,14 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 	}
 
 	// 3. 背景執行
-	// 使用開頭的字作為執行檔，後面的作為參數 (需要簡單的 split，不支援複雜的 quote 處理)
-	// 為了支援 shell features (如 &&, |)，我們統一使用 sh -c (Linux) 或 cmd /c (Windows)
+	// 使用開頭的字作為執行檔，後面的作為參數 (需要簡單的 split，不支援複雜的 
+	// quote 處理)
+	// 為了支援 shell features (如 &&, |)，我們統一使用 sh -c (Linux) 或 
+	// cmd /c (Windows)
 	// 根據 User OS (Windows)，使用 cmd /c
 
-	// 注意：這裡直接執行可能會有安全風險 (Command Injection)，但基於 User Request 為個人助理，暫時允許。
+	// 注意：這裡直接執行可能會有安全風險 (Command Injection)，
+	// 但基於 User Request 為個人助理，暫時允許。
 
 	go func(commandStr string) {
 		// Detect OS logic if needed, simplify to Windows PowerShell or Cmd
