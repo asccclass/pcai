@@ -152,9 +152,9 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 	}
 
 	// 3. 背景執行
-	// 使用開頭的字作為執行檔，後面的作為參數 (需要簡單的 split，不支援複雜的 
+	// 使用開頭的字作為執行檔，後面的作為參數 (需要簡單的 split，不支援複雜的
 	// quote 處理)
-	// 為了支援 shell features (如 &&, |)，我們統一使用 sh -c (Linux) 或 
+	// 為了支援 shell features (如 &&, |)，我們統一使用 sh -c (Linux) 或
 	// cmd /c (Windows)
 	// 根據 User OS (Windows)，使用 cmd /c
 
