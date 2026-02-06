@@ -173,6 +173,25 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	// 排程工具 (讓 LLM 可以設定 Cron)
 	registry.Register(&SchedulerTool{Mgr: schedMgr})
 
+	// 檔案系統管理器，設定 "Sandbox" 根目錄
+	workspacePath := os.Getenv("WORKSPACE_PATH")
+	if workspacePath == "" {
+		workspacePath = home
+	}
+	fsManager, err := NewFileSystemManager(workspacePath)
+	if err != nil {
+		log.Fatalf("無法初始化檔案系統: %v", err)
+	}
+	// 註冊檔案系統工具
+	registry.Register(&FsMkdirTool{Manager: fsManager})
+	registry.Register(&FsWriteFileTool{Manager: fsManager})
+	registry.Register(&FsListDirTool{Manager: fsManager})
+	registry.Register(&FsRemoveTool{Manager: fsManager})
+	registry.Register(&FsReadFileTool{
+		Manager:     fsManager,
+		MaxReadSize: 32 * 1024, // 預設 32KB
+	})
+
 	// --- 可繼續新增：相關技能工具 ---
 	// 新增 Advisor Skill
 	advisorSkill := skills.NewAdvisorSkill(client, cfg.Model)
@@ -199,7 +218,7 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	if cfg.TelegramToken != "" {
 		// 1. 建立 Agent Adapter (支援多用戶 Session)
 		// 注意：這裡改成使用傳入區域變數 registry (已經包含所有工具)
-		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt)
+		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt, cfg.TelegramDebug)
 
 		// 2. 建立 Dispatcher
 		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)

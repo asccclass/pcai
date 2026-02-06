@@ -17,6 +17,7 @@ type Config struct {
 	HistoryPath     string
 	TelegramToken   string
 	TelegramAdminID string
+	TelegramDebug   bool
 }
 
 // LoadConfig 負責初始化配置，支援 .env 檔案與環境變數
@@ -88,6 +89,7 @@ func LoadConfig() *Config {
 		HistoryPath:     getEnv("PCAI_HISTORY_PATH", filepath.Join(home, "internal", "history")),
 		TelegramToken:   getEnv("TELEGRAM_TOKEN", ""),
 		TelegramAdminID: getEnv("TELEGRAM_ADMIN_ID", ""),
+		TelegramDebug:   getEnvBool("TELEGRAM_DEBUG", false),
 	}
 }
 
@@ -95,6 +97,13 @@ func LoadConfig() *Config {
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if value, ok := os.LookupEnv(key); ok {
+		return value == "true" || value == "1"
 	}
 	return fallback
 }

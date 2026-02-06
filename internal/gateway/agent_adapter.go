@@ -20,16 +20,18 @@ type AgentAdapter struct {
 	systemPrompt string
 	mu           sync.Mutex
 	router       *Router // [NEW] 引入路由
+	debug        bool    // [NEW] Debug 旗標
 }
 
 // NewAgentAdapter 建立新的 Adapter
-func NewAgentAdapter(registry *core.Registry, modelName, systemPrompt string) *AgentAdapter {
+func NewAgentAdapter(registry *core.Registry, modelName, systemPrompt string, debug bool) *AgentAdapter {
 	return &AgentAdapter{
 		agents:       make(map[string]*agent.Agent),
 		registry:     registry,
 		modelName:    modelName,
 		systemPrompt: systemPrompt,
 		router:       NewRouter(modelName), // 初始化路由，並以傳入的 model 作為預設
+		debug:        debug,
 	}
 }
 
@@ -52,7 +54,10 @@ func (a *AgentAdapter) Process(env channel.Envelope) string {
 	}
 
 	// 呼叫 Agent 進行對話
-	fmt.Printf("[Telegram DEBUG] (%s) Sending prompt to Agent: %s\n", sessionID, env.Content)
+	// 呼叫 Agent 進行對話
+	if a.debug {
+		fmt.Printf("[Telegram DEBUG] (%s) Sending prompt to Agent: %s\n", sessionID, env.Content)
+	}
 
 	// 注意：這裡暫時不使用 stream callback (傳 nil)，因為 Telegram API 通常是一次性回覆
 	// 若要支援打字中或串流更新，需要更複雜的 channel 整合
@@ -61,7 +66,9 @@ func (a *AgentAdapter) Process(env channel.Envelope) string {
 		fmt.Printf("[Telegram DEBUG] (%s) Agent Chat Error: %v\n", sessionID, err)
 		return fmt.Sprintf("⚠️ 系統錯誤: %v", err)
 	}
-	fmt.Printf("[Telegram DEBUG] (%s) Agent Response Length: %d\n", sessionID, len(response))
+	if a.debug {
+		fmt.Printf("[Telegram DEBUG] (%s) Agent Response Length: %d\n", sessionID, len(response))
+	}
 
 	// 儲存 Session (Agent 內部已自動維護 Message History，但仍需觸發存檔)
 	// 在 Agent.Chat 內部其實沒有顯式呼叫 SaveSession，CLI 是在外層呼叫的
@@ -99,11 +106,14 @@ func (a *AgentAdapter) getOrCreateAgent(sessionID string) *agent.Agent {
 	newAgent := agent.NewAgent(a.modelName, a.systemPrompt, session, a.registry)
 
 	// 設定 Callbacks (為了 debug)
-	newAgent.OnToolCall = func(name, args string) {
-		fmt.Printf("[Telegram DEBUG] (%s) Tool Call: %s args: %s\n", sessionID, name, args)
-	}
-	newAgent.OnModelMessageComplete = func(content string) {
-		fmt.Printf("[Telegram DEBUG] (%s) AI Message Complete: %s...\n", sessionID, content[:min(len(content), 50)])
+	// 設定 Callbacks (為了 debug)
+	if a.debug {
+		newAgent.OnToolCall = func(name, args string) {
+			fmt.Printf("[Telegram DEBUG] (%s) Tool Call: %s args: %s\n", sessionID, name, args)
+		}
+		newAgent.OnModelMessageComplete = func(content string) {
+			fmt.Printf("[Telegram DEBUG] (%s) AI Message Complete: %s...\n", sessionID, content[:min(len(content), 50)])
+		}
 	}
 
 	a.agents[sessionID] = newAgent

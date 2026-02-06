@@ -6,4 +6,4 @@ credentials.json
 token.json
 botmemory/backup/*
 envfile
-botmemory/backup/*
+botmemory/history/*

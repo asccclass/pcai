@@ -69,7 +69,8 @@ func (t *ShellExecTool) Definition() api.Tool {
 func (t *ShellExecTool) execute(command string) (string, error) {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/C", command)
+		// [FIX] Force UTF-8 encoding (chcp 65001) to avoid garbled text (mojibake)
+		cmd = exec.Command("cmd", "/C", "chcp 65001 && "+command)
 	} else {
 		cmd = exec.Command("sh", "-c", command)
 	}
