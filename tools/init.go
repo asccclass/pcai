@@ -179,8 +179,8 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	registry.Register(advisorSkill.CreateTool())
 
 	// [NEW] 載入動態技能 (skills.md)
-	skillsPath := filepath.Join(home, "skills", "skills.md")
-	dynamicSkills, err := skills.LoadSkills(skillsPath)
+	skillsDir := filepath.Join(home, "skills")
+	dynamicSkills, err := skills.LoadSkills(skillsDir)
 	if err != nil {
 		log.Printf("[Skills] 無法載入 skills.md: %v", err)
 	} else {

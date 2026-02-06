@@ -1,72 +1,74 @@
 package skills
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/ollama/ollama/api"
+	"gopkg.in/yaml.v3"
 )
 
 // SkillDefinition 代表從 Markdown 解析出來的技能
 type SkillDefinition struct {
-	Name        string
-	Description string
-	Command     string
-	Params      []string // 從 Command 解析出的參數參數名 (e.g. "query", "args")
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Command     string   `yaml:"command"`
+	Params      []string `yaml:"-"` // 從 Command 解析出的參數參數名 (e.g. "query", "args")
 }
 
-// LoadSkills 從指定 Markdown 檔案載入技能定義
-func LoadSkills(path string) ([]*SkillDefinition, error) {
-	f, err := os.Open(path)
+// LoadSkills 從指定目錄載入所有技能定義 (Clawcode 標準: SKILL.md)
+func LoadSkills(dir string) ([]*SkillDefinition, error) {
+	var skills []*SkillDefinition
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.EqualFold(d.Name(), "SKILL.md") {
+			skill, err := loadSkillFromFile(path)
+			if err != nil {
+				fmt.Printf("[Skills] Warning: Failed to load skill from %s: %v\n", path, err)
+				return nil // 繼續載入其他技能
+			}
+			skills = append(skills, skill)
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-
-	var skills []*SkillDefinition
-	var currentSkill *SkillDefinition
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		// 解析標題 "## SkillName"
-		if strings.HasPrefix(line, "## ") {
-			if currentSkill != nil {
-				skills = append(skills, currentSkill)
-			}
-			name := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-			currentSkill = &SkillDefinition{
-				Name: name,
-			}
-		} else if currentSkill != nil {
-			// 解析 Description
-			if strings.HasPrefix(line, "Description:") {
-				desc := strings.TrimSpace(strings.TrimPrefix(line, "Description:"))
-				currentSkill.Description = desc
-			}
-			// 解析 Command
-			if strings.HasPrefix(line, "Command:") {
-				cmd := strings.TrimSpace(strings.TrimPrefix(line, "Command:"))
-				currentSkill.Command = cmd
-				currentSkill.Params = parseParams(cmd)
-			}
-		}
-	}
-	// 加入最後一個
-	if currentSkill != nil {
-		skills = append(skills, currentSkill)
-	}
-
 	return skills, nil
+}
+
+// loadSkillFromFile 解析單一 SKILL.md 檔案
+func loadSkillFromFile(path string) (*SkillDefinition, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解析 Frontmatter
+	parts := strings.SplitN(string(content), "---", 3)
+	if len(parts) < 3 {
+		return nil, fmt.Errorf("invalid frontmatter format")
+	}
+
+	yamlContent := parts[1]
+	var skill SkillDefinition
+	if err := yaml.Unmarshal([]byte(yamlContent), &skill); err != nil {
+		return nil, fmt.Errorf("yaml parse error: %v", err)
+	}
+
+	// 解析參數
+	skill.Params = parseParams(skill.Command)
+	return &skill, nil
 }
 
 // parseParams 解析 {{param}} 形式的參數
