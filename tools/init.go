@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/asccclass/pcai/internal/channel" // 加入
+	"github.com/asccclass/pcai/internal/channel"
 	"github.com/asccclass/pcai/internal/config"
 	"github.com/asccclass/pcai/internal/core"
 	"github.com/asccclass/pcai/internal/database"
-	"github.com/asccclass/pcai/internal/gateway" // 加入
+	"github.com/asccclass/pcai/internal/gateway"
 	"github.com/asccclass/pcai/internal/gmail"
 	"github.com/asccclass/pcai/internal/heartbeat"
 	"github.com/asccclass/pcai/internal/memory"
@@ -100,9 +100,6 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	// Note: We do NOT close the DB here because it needs to persist for the lifetime of the application.
 	// defer sqliteDB.Close()
 
-	// 2. 初始化大腦 (注入資料庫連線)
-	// signalURL := "http://localhost:8080/v1/receive/+886912345678" // Deprecated: signalAPI replaced by ollamaURL
-
 	// 初始化排程管理器(Hybrid Manager)
 	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model)
 
@@ -116,7 +113,7 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 			MaxResults:     5,
 		}
 		// 重構後：使用 Skill 層的 Adapter
-		myGmailSkill := skills.NewGmailSkill(client, cfg.Model)
+		myGmailSkill := skills.NewGmailSkill(client, cfg.Model, cfg.TelegramToken, cfg.TelegramAdminID)
 		myGmailSkill.Execute(gmailCfg)
 	})
 	schedMgr.RegisterTaskType("backup_knowledge", func() {
@@ -151,8 +148,10 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 
 	// 檔案系統管理器，設定 "Sandbox" 根目錄
 	workspacePath := os.Getenv("WORKSPACE_PATH")
+	log.Printf("[Init] WORKSPACE_PATH env: '%s'", workspacePath)
 	if workspacePath == "" {
 		workspacePath = home
+		log.Printf("[Init] WORKSPACE_PATH is empty, defaulting to home: %s", home)
 	}
 	fsManager, err := NewFileSystemManager(workspacePath)
 	if err != nil {
@@ -166,7 +165,6 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	myBrain.SetTools(registry)
 
 	// 基礎工具
-	registry.Register(&ListFilesTool{Manager: fsManager})
 	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
 	registry.Register(&KnowledgeSearchTool{})
 	registry.Register(&FetchURLTool{})
