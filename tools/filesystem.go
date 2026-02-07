@@ -467,7 +467,6 @@ func (t *FsAppendFileTool) Description() string {
 	return `將內容附加到檔案末尾 (Append)。適合寫入日誌或記憶。JSON範例: {"path": "logs/chat.log", "content": "\n新的記錄..."}`
 }
 
-
 func (t *FsAppendFileTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",
@@ -560,9 +559,41 @@ func init() {
 			MaxReadSize: 64 * 1024, // 在這裡設定預設參數
 		}
 	})
-    
-    // 註冊 FsAppendFile
+
+	// 註冊 FsAppendFile
 	Register(func(m *FileSystemManager) Tool {
 		return &FsAppendFileTool{Manager: m}
 	})
+
+	// [FIX] 註冊別名 (Alias) 以處理 LLM 幻覺
+	// 有些模型會習慣性把 append_file 叫成 append_to_file
+	Register(func(m *FileSystemManager) Tool {
+		t := &FsAppendFileTool{Manager: m}
+		// 這裡做一個簡單的 Wrapper 來改名
+		return &ToolAlias{
+			Original: t,
+			NewName:  "fs_append_to_file",
+		}
+	})
+}
+
+// ToolAlias 是一個簡單的包裝器，用來更改工具名稱
+type ToolAlias struct {
+	Original Tool
+	NewName  string
+}
+
+func (t *ToolAlias) Name() string                    { return t.NewName }
+func (t *ToolAlias) Description() string             { return t.Original.Description() }
+func (t *ToolAlias) Run(args string) (string, error) { return t.Original.Run(args) }
+
+// 透過 Type Assertion 處理 Definition
+func (t *ToolAlias) Definition() api.Tool {
+	// 如果原始工具支援 Definition，我們攔截並修改 Name
+	if def, ok := t.Original.(interface{ Definition() api.Tool }); ok {
+		d := def.Definition()
+		d.Function.Name = t.NewName
+		return d
+	}
+	return api.Tool{} // Fallback
 }
