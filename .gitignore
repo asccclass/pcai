@@ -8,3 +8,4 @@ botmemory/backup/*
 envfile
 botmemory/history/*
 user_workspace/*
+sandbox/*
