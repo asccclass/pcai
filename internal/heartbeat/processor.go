@@ -28,9 +28,9 @@ type HeartbeatDecision struct {
 }
 
 type IntentResponse struct {
-	Intent string            `json:"intent"` // 例如: SET_FILTER, CHAT, UNKNOWN
-	Params map[string]string `json:"params"` // 提取出的參數，如 pattern, action
-	Reply  string            `json:"reply"`  // AI 給用戶的直接回覆內容
+	Intent string                 `json:"intent"` // 例如: SET_FILTER, CHAT, UNKNOWN
+	Params map[string]interface{} `json:"params"` // 提取出的參數，如 pattern, action
+	Reply  string                 `json:"reply"`  // AI 給用戶的直接回覆內容
 }
 
 type ContactInfo struct {
@@ -50,7 +50,7 @@ type ToolExecutor interface {
 type PCAIBrain struct {
 	db          *database.DB
 	httpClient  *resty.Client
-	signalAPI   string
+	ollamaURL   string
 	filterSkill *skills.FilterSkill
 	dispatcher  *notify.Dispatcher
 	modelName   string
@@ -61,11 +61,11 @@ func (b *PCAIBrain) SetTools(executor ToolExecutor) {
 	b.tools = executor
 }
 
-func NewPCAIBrain(db *database.DB, apiUrl, modelName string) *PCAIBrain {
+func NewPCAIBrain(db *database.DB, ollamaURL, modelName string) *PCAIBrain {
 	return &PCAIBrain{
 		db:          db,
 		httpClient:  resty.New().SetTimeout(100 * time.Second).SetRetryCount(2),
-		signalAPI:   apiUrl,
+		ollamaURL:   ollamaURL,
 		modelName:   modelName,
 		filterSkill: skills.NewFilterSkill(db),
 	}
@@ -82,19 +82,20 @@ func (b *PCAIBrain) getTrustList() map[string]ContactInfo {
 // 定義 LLM 回傳的結構與 Prompt
 func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput string) (*IntentResponse, error) {
 	systemPrompt := `
-你是一個意圖解析助理。請分析用戶輸入並回傳 JSON 格式。
-支援的意圖：
+你是 PCAI 意圖解析助理。請分析用戶輸入並回傳 JSON 格式。
+
+支援的意圖 (Intent)：
 1. SET_FILTER: 當用戶想忽略、過濾、或標記某號碼/關鍵字為重要時。
    - params 需包含: "pattern" (號碼或關鍵字), "action" (URGENT, NORMAL, IGNORE)
 2. CHAT: 一般聊天或詢問。
 3. TOOL_USE: 當用戶要求執行特定任務（如列出檔案、讀取網頁、查詢知識庫）。
-   - params 需包含: "tool" (工具名稱), "args" (JSON 格式的參數字串)
+   - params 需包含: "tool" (工具名稱), "args" (JSON 物件或 JSON 字串)
    - 支援工具列表與詳細參數定義如下:
 %s
 
 
 範例輸入：「請幫我列出當前目錄的檔案」
-範例輸出：{"intent": "TOOL_USE", "params": {"tool": "ListFiles", "args": "{}"}, "reply": "好的，正在為您列出檔案。"}
+範例輸出：{"intent": "TOOL_USE", "params": {"tool": "fs_list_dir", "args": {"path": "."}}, "reply": "好的，正在為您列出檔案。"}
 
 用戶輸入："%s"
 `
@@ -119,7 +120,7 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 			"format": "json", // 強制 Ollama 回傳 JSON 格式
 		}).
 		SetResult(&result).
-		Post("http://172.18.124.210:11434/api/generate")
+		Post(fmt.Sprintf("%s/api/generate", b.ollamaURL))
 
 	if err != nil {
 		return nil, err
@@ -132,6 +133,7 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 	// 解析 LLM 的 JSON 回覆
 	var intent IntentResponse
 	if err := json.Unmarshal([]byte(result.Response), &intent); err != nil {
+		fmt.Printf("⚠️ 解析意圖失敗，原始回覆:\n%s\n", result.Response)
 		return nil, fmt.Errorf("解析意圖失敗: %v", err)
 	}
 
@@ -206,7 +208,7 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 			"format": "json",
 		}).
 		SetResult(&result).
-		Post("http://172.18.124.210:11434/api/generate")
+		Post(fmt.Sprintf("%s/api/generate", b.ollamaURL))
 
 	if err != nil {
 		return "", fmt.Errorf("Ollama 連線失敗: %w", err)
@@ -255,10 +257,13 @@ func (b *PCAIBrain) HandleUserChat(ctx context.Context, sessionID string, userIn
 	// 根據解析出的意圖執行動作
 	switch intentResp.Intent {
 	case "SET_FILTER":
+		pattern, _ := intentResp.Params["pattern"].(string)
+		action, _ := intentResp.Params["action"].(string)
+
 		// 呼叫 Skill 寫入資料庫（實現自我學習）
 		_, err := b.filterSkill.Execute(ctx, skills.FilterParams{
-			Pattern:     intentResp.Params["pattern"],
-			Action:      intentResp.Params["action"],
+			Pattern:     pattern,
+			Action:      action,
 			Description: fmt.Sprintf("來自對話學習: %s", userInput),
 		})
 		if err != nil {
@@ -268,8 +273,26 @@ func (b *PCAIBrain) HandleUserChat(ctx context.Context, sessionID string, userIn
 
 	case "TOOL_USE":
 		// 如果大腦判斷需要使用工具
-		toolName := intentResp.Params["tool"]
-		toolArgs := intentResp.Params["args"]
+		toolName, _ := intentResp.Params["tool"].(string)
+
+		// 處理 args: 可能是 string (JSON encoded) 或 map[string]interface{}
+		var toolArgs string
+		if rawArgs, ok := intentResp.Params["args"]; ok {
+			switch v := rawArgs.(type) {
+			case string:
+				toolArgs = v
+			default:
+				// 嘗試將物件轉回 JSON 字串
+				if bytes, err := json.Marshal(v); err == nil {
+					toolArgs = string(bytes)
+				} else {
+					fmt.Printf("⚠️ 無法將 args 轉為 JSON 字串: %v\n", err)
+					toolArgs = "{}"
+				}
+			}
+		} else {
+			toolArgs = "{}"
+		}
 
 		fmt.Printf("[Agent] 嘗試使用工具: %s, 參數: %s\n", toolName, toolArgs)
 
@@ -363,7 +386,7 @@ func (b *PCAIBrain) AskOllama(ctx context.Context, prompt string) (string, error
 			"stream": false, // 簡報通常較長，關閉 stream 以一次性獲取內容
 		}).
 		SetResult(&result).
-		Post("http://172.18.124.210:11434/api/generate")
+		Post(fmt.Sprintf("%s/api/generate", b.ollamaURL))
 
 	if err != nil {
 		return "", fmt.Errorf("Ollama 請求失敗: %w", err)
@@ -384,13 +407,21 @@ func (b *PCAIBrain) GenerateMorningBriefing(ctx context.Context) error {
 	          WHERE created_at > date('now', '-1 day') || ' 23:00:00' 
 	          AND is_briefed = 0`
 
-	rows, _ := b.db.QueryContext(ctx, query)
+	rows, err := b.db.QueryContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to query heartbeat logs: %w", err)
+	}
+	defer rows.Close()
+
 	var logs []string
 	var ids []int
 	for rows.Next() {
 		var id int
 		var snp, reas string
-		rows.Scan(&id, &snp, &reas)
+		if err := rows.Scan(&id, &snp, &reas); err != nil {
+			fmt.Printf("⚠️ 掃描日誌失敗: %v\n", err)
+			continue
+		}
 		logs = append(logs, fmt.Sprintf("- 訊息摘要: %s (判斷理由: %s)", snp, reas))
 		ids = append(ids, id)
 	}

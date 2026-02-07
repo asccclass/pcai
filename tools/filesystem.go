@@ -455,3 +455,114 @@ func (t *FsReadFileTool) Run(argsJSON string) (string, error) {
 
 	return result, nil
 }
+
+// ==================== 6. FsAppendFile: 附加內容到檔案 (NEW) ====================
+
+type FsAppendFileTool struct {
+	Manager *FileSystemManager
+}
+
+func (t *FsAppendFileTool) Name() string { return "fs_append_file" }
+func (t *FsAppendFileTool) Description() string {
+	return `將內容附加到檔案末尾 (Append)。適合寫入日誌或記憶。JSON範例: {"path": "logs/chat.log", "content": "\n新的記錄..."}`
+}
+
+
+func (t *FsAppendFileTool) Definition() api.Tool {
+	return api.Tool{
+		Type: "function",
+		Function: api.ToolFunction{
+			Name:        "fs_append_file",
+			Description: "附加檔案內容",
+			Parameters: func() api.ToolFunctionParameters {
+				var props api.ToolPropertiesMap
+				js := `{
+					"path": {
+						Type:        "string",
+						Description: "目錄路徑 (相對路徑)",
+					}
+				}`
+				_ = json.Unmarshal([]byte(js), &props)
+
+				return api.ToolFunctionParameters{
+					Type:       "object",
+					Properties: &props,
+					Required:   []string{"path"},
+				}
+			}(),
+		},
+	}
+}
+
+func (t *FsAppendFileTool) Run(argsJSON string) (string, error) {
+	var args struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("JSON 格式錯誤: %v", err)
+	}
+
+	safePath, err := t.Manager.validatePath(args.Path)
+	if err != nil {
+		return "", err
+	}
+
+	// 確保父目錄存在 (防呆機制)
+	parentDir := filepath.Dir(safePath)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return "", fmt.Errorf("無法建立父目錄: %v", err)
+	}
+
+	// 開啟檔案:
+	// O_APPEND: 寫入時自動指到檔案末尾
+	// O_CREATE: 如果檔案不存在則建立
+	// O_WRONLY: 只寫模式
+	f, err := os.OpenFile(safePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return "", fmt.Errorf("無法開啟檔案: %v", err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(args.Content); err != nil {
+		return "", fmt.Errorf("寫入失敗: %v", err)
+	}
+
+	return fmt.Sprintf("成功附加內容到: %s (長度: %d)", args.Path, len(args.Content)), nil
+}
+
+// 自動註冊機制
+func init() {
+	// 註冊 FsMkdir
+	Register(func(m *FileSystemManager) Tool {
+		return &FsMkdirTool{Manager: m}
+	})
+
+	// 註冊 FsWriteFile
+	Register(func(m *FileSystemManager) Tool {
+		return &FsWriteFileTool{Manager: m}
+	})
+
+	// 註冊 FsListDir
+	Register(func(m *FileSystemManager) Tool {
+		return &FsListDirTool{Manager: m}
+	})
+
+	// 註冊 FsRemove
+	Register(func(m *FileSystemManager) Tool {
+		return &FsRemoveTool{Manager: m}
+	})
+
+	// 註冊 FsReadFile
+	Register(func(m *FileSystemManager) Tool {
+		return &FsReadFileTool{
+			Manager:     m,
+			MaxReadSize: 64 * 1024, // 在這裡設定預設參數
+		}
+	})
+    
+    // 註冊 FsAppendFile
+	Register(func(m *FileSystemManager) Tool {
+		return &FsAppendFileTool{Manager: m}
+	})
+}

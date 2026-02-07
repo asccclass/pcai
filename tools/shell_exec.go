@@ -12,7 +12,8 @@ import (
 )
 
 type ShellExecTool struct {
-	Mgr *BackgroundManager // 對接到背景管理器
+	Mgr     *BackgroundManager // 對接到背景管理器
+	Manager *FileSystemManager // Sandbox Manager
 }
 
 // sanitizeCommand 確保指令不會因為多餘的轉義而失效
@@ -37,7 +38,7 @@ func (t *ShellExecTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        "shell_exec",
-			Description: "CRITICAL: 執行本地 Shell 指令。當使用者要求檔案操作、目錄查看或系統指令時，必須使用此工具。對於耗時任務（如編譯、長時間監控、大檔下載），務必將 async 設為 true 以便在背景執行。",
+			Description: "CRITICAL: 執行本地 Shell 指令。注意：所有操作將被限制在工作區目錄中 (Sandbox)。",
 			// 關鍵修正點：加上型別轉型
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
@@ -73,6 +74,11 @@ func (t *ShellExecTool) execute(command string) (string, error) {
 		cmd = exec.Command("cmd", "/C", "chcp 65001 && "+command)
 	} else {
 		cmd = exec.Command("sh", "-c", command)
+	}
+
+	// 強制設定工作目錄為 Sandbox Root
+	if t.Manager != nil {
+		cmd.Dir = t.Manager.RootPath
 	}
 
 	var stdout, stderr bytes.Buffer

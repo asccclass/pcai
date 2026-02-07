@@ -101,10 +101,10 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	// defer sqliteDB.Close()
 
 	// 2. 初始化大腦 (注入資料庫連線)
-	signalURL := "http://localhost:8080/v1/receive/+886912345678"
+	// signalURL := "http://localhost:8080/v1/receive/+886912345678" // Deprecated: signalAPI replaced by ollamaURL
 
 	// 初始化排程管理器(Hybrid Manager)
-	myBrain := heartbeat.NewPCAIBrain(sqliteDB, signalURL, cfg.Model)
+	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model)
 
 	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
 
@@ -149,6 +149,16 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	// SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
 	SyncMemory(memManager, mdPath)
 
+	// 檔案系統管理器，設定 "Sandbox" 根目錄
+	workspacePath := os.Getenv("WORKSPACE_PATH")
+	if workspacePath == "" {
+		workspacePath = home
+	}
+	fsManager, err := NewFileSystemManager(workspacePath)
+	if err != nil {
+		log.Fatalf("無法初始化檔案系統: %v", err)
+	}
+
 	// 初始化並註冊工具
 	registry := core.NewRegistry()
 
@@ -156,8 +166,8 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	myBrain.SetTools(registry)
 
 	// 基礎工具
-	registry.Register(&ListFilesTool{})
-	registry.Register(&ShellExecTool{Mgr: bgMgr}) // 傳入背景管理器
+	registry.Register(&ListFilesTool{Manager: fsManager})
+	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
 	registry.Register(&KnowledgeSearchTool{})
 	registry.Register(&FetchURLTool{})
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
@@ -173,15 +183,6 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	// 排程工具 (讓 LLM 可以設定 Cron)
 	registry.Register(&SchedulerTool{Mgr: schedMgr})
 
-	// 檔案系統管理器，設定 "Sandbox" 根目錄
-	workspacePath := os.Getenv("WORKSPACE_PATH")
-	if workspacePath == "" {
-		workspacePath = home
-	}
-	fsManager, err := NewFileSystemManager(workspacePath)
-	if err != nil {
-		log.Fatalf("無法初始化檔案系統: %v", err)
-	}
 	// 註冊檔案系統工具
 	registry.Register(&FsMkdirTool{Manager: fsManager})
 	registry.Register(&FsWriteFileTool{Manager: fsManager})
@@ -191,6 +192,7 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 		Manager:     fsManager,
 		MaxReadSize: 32 * 1024, // 預設 32KB
 	})
+	registry.Register(&FsAppendFileTool{Manager: fsManager})
 
 	// --- 可繼續新增：相關技能工具 ---
 	// 新增 Advisor Skill

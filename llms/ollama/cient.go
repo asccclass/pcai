@@ -63,7 +63,7 @@ func ChatStream(modelName string, messages []Message, tools []api.Tool, opts Opt
 	// 預設 Ollama 位址，可透過設定檔或環境變數擴充
 	ollamaURL := os.Getenv("PCAI_OLLAMA_URL")
 	if ollamaURL == "" {
-		ollamaURL = "http://172.18.124.210:11434"
+		ollamaURL = "http://localhost:11434"
 	}
 	// 處理 URL 結尾
 	ollamaURL = strings.TrimSuffix(ollamaURL, "/")
