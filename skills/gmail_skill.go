@@ -10,20 +10,24 @@ import (
 	"time"
 
 	"github.com/asccclass/pcai/internal/gmail"
-	signal "github.com/asccclass/pcai/internal/singal"
+	"github.com/go-resty/resty/v2"
 	"github.com/ollama/ollama/api"
 )
 
 // GmailSkill 負責協調 Gmail 讀取、AI 摘要與 Signal 通知
 type GmailSkill struct {
-	ollamaClient *api.Client
-	modelName    string
+	ollamaClient   *api.Client
+	modelName      string
+	telegramToken  string
+	telegramChatID string
 }
 
-func NewGmailSkill(client *api.Client, modelName string) *GmailSkill {
+func NewGmailSkill(client *api.Client, modelName, tgToken, tgChatID string) *GmailSkill {
 	return &GmailSkill{
-		ollamaClient: client,
-		modelName:    modelName,
+		ollamaClient:   client,
+		modelName:      modelName,
+		telegramToken:  tgToken,
+		telegramChatID: tgChatID,
 	}
 }
 
@@ -72,18 +76,41 @@ func (s *GmailSkill) Execute(cfg gmail.FilterConfig) {
 		return
 	}
 
-	// 4. 判斷是否緊急並發送 Signal (業務邏輯)
+	// 4. 判斷是否緊急並發送 Telegram (業務邏輯)
 	if strings.Contains(summary, "[URGENT]") {
-		log.Println("🚨 [GmailSkill] 偵測到緊急郵件，準備發送 Signal 通知...")
+		log.Println("🚨 [GmailSkill] 偵測到緊急郵件，準備發送 Telegram 通知...")
 
 		alertMsg := fmt.Sprintf("⚠️ PCAI 緊急郵件通知：\n%s", summary)
-		// 注意：這裡假設 Signal 接收者號碼是寫死的，或者是注入的。
-		// 在重購時，保留原有的 Hardcoded 號碼，或建議之後改成設定檔讀取
-		err := signal.SendNotification("+886921609364", alertMsg)
-		if err != nil {
-			log.Printf("[GmailSkill Error] Signal 發送失敗: %v", err)
+
+		// 使用 Telego 直接發送
+		// 為了簡化，這裡每次都 New 一個 bot，或者在 Struct 內持久化
+		// 考慮到這是偶發任務，NewBot 開銷可接受
+		// 但最理想是複用 internal/notify 工具
+		// 這裡為了快速實作，直接使用 notify/telegram.go 的邏輯 (或直接引入 notify 包)
+
+		// 或是直接在這裡調用 Telegram API
+		if s.telegramToken != "" && s.telegramChatID != "" {
+			// 簡單實作：使用 net/http post 或者引入 notify 包
+			// 由於我們不能循環引用 internal/notify (如果 tools 已經引用了 skills，而 notify 引用了 skills... wait, skills is leaf)
+			// 但為了保持簡單，我們可以讓 GmailSkill 依賴 notify
+
+			// 這裡直接使用 go-resty 發送
+			client := resty.New()
+			url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", s.telegramToken)
+			_, err := client.R().
+				SetBody(map[string]string{
+					"chat_id": s.telegramChatID,
+					"text":    alertMsg,
+				}).
+				Post(url)
+
+			if err != nil {
+				log.Printf("[GmailSkill Error] Telegram 發送失敗: %v", err)
+			} else {
+				log.Println("✅ [GmailSkill] Telegram 通知已送出")
+			}
 		} else {
-			log.Println("✅ [GmailSkill] Signal 通知已送出")
+			log.Println("⚠️ [GmailSkill] 未設定 Telegram Token/ChatID，無法發送通知")
 		}
 	}
 

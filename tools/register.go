@@ -14,14 +14,24 @@ func Register(factory ToolFactory) {
 	internalRegistry = append(internalRegistry, factory)
 }
 
-// LoadAllTools 這是 main.go 唯一需要呼叫的函數
-// 它會把依賴 (Manager) 注入進去，並回傳所有可用的工具列表
-func LoadAllTools(manager *FileSystemManager) []Tool {
+// 假設你有一個 config 字串列表，例如 ["fs_mkdir", "fs_read_file"]
+// 如果 whitelist 為空，代表啟用全部
+func LoadAllTools(manager *FileSystemManager, whitelist []string) []Tool {
 	var tools []Tool
+
+	// 轉成 map 加速查詢
+	allowed := make(map[string]bool)
+	for _, name := range whitelist {
+		allowed[name] = true
+	}
+	enableAll := len(whitelist) == 0
+
 	for _, factory := range internalRegistry {
 		// 這裡執行依賴注入 (Dependency Injection)
 		t := factory(manager)
-		tools = append(tools, t)
+		if enableAll || allowed[t.Name()] {
+			tools = append(tools, t)
+		}
 	}
 	return tools
 }

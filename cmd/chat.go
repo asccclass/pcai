@@ -30,12 +30,6 @@ var (
 	currentOpts = ollama.Options{Temperature: 0.7, TopP: 0.9}
 )
 
-var chatCmd = &cobra.Command{
-	Use:   "chat",
-	Short: "開啟具備 AI Agent 能力的對話",
-	Run:   runChat,
-}
-
 func init() {
 	cfg = config.LoadConfig()
 	chatCmd.Flags().StringVarP(&modelName, "model", "m", cfg.Model, "指定使用的模型")
@@ -54,11 +48,11 @@ func runChat(cmd *cobra.Command, args []string) {
 		glamour.WithWordWrap(100),
 	)
 
-	// 初始化管理器
+	// 初始化背景執行管理器(Background Manager)
 	bgMgr := tools.NewBackgroundManager()
 	GlobalBgMgr = bgMgr // 將實例交給全域指標，讓 health 指令讀得到
 	// 初始化工具
-	registry := tools.InitRegistry(bgMgr)
+	registry := tools.InitRegistry(bgMgr, cfg)
 
 	// 載入 Session 與 RAG 增強
 	sess := history.LoadLatestSession()
@@ -149,4 +143,10 @@ func runChat(cmd *cobra.Command, args []string) {
 		history.SaveSession(sess)
 		history.CheckAndSummarize(sess, modelName, systemPrompt)
 	}
+}
+
+var chatCmd = &cobra.Command{
+	Use:   "chat",
+	Short: "開啟具備 AI Agent 能力的對話",
+	Run:   runChat,
 }

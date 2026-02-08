@@ -76,33 +76,28 @@ func SyncMemory(mem *memory.Manager, filePath string) {
 var DefaultRegistry = core.NewRegistry()
 
 // Init 初始化工具註冊表
-func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
-	home, _ := os.Getwd()
-	// 載入設定
-	cfg := config.LoadConfig()
+func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
+	home, _ := os.Getwd() // 程式碼根目錄
 
 	// 建立 Ollama API 客戶端
-	// [FIX] 強制使用 PCAI_OLLAMA_URL 覆蓋 OLLAMA_HOST，確保連線到正確的遠端伺服器
-	if pcaiURL := os.Getenv("PCAI_OLLAMA_URL"); pcaiURL != "" {
-		os.Setenv("OLLAMA_HOST", pcaiURL)
+	if pcaiURL := os.Getenv("OLLAMA_HOST"); pcaiURL == "" {
+		fmt.Printf("⚠️ [InitRegistry] OLLAMA_HOST is empty, please set it in envfile\n")
 	}
-
-	client, err := api.ClientFromEnvironment()
+	client, err := api.ClientFromEnvironment() // ollama client 使用 OLLAMA_HOST 作為環境變數
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("⚠️ [InitRegistry] OLLAMA_HOST is empty, please set it in envfile\n")
 	}
 
 	dbPath := filepath.Join(home, "botmemory", "pcai.db")
 	sqliteDB, err := database.NewSQLite(dbPath)
 	if err != nil {
-		log.Fatalf("無法啟動資料庫: %v", err)
+		fmt.Printf("⚠️ [InitRegistry] 無法啟動資料庫: %v\n", err)
 	}
 	// Note: We do NOT close the DB here because it needs to persist for the lifetime of the application.
 	// defer sqliteDB.Close()
 
 	// 初始化排程管理器(Hybrid Manager)
 	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model)
-
 	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
 
 	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
@@ -126,9 +121,9 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 	})
 
 	// 建立 Skills
-	// 關鍵修正：在所有 TaskType 註冊完成後，才載入資料庫中的排程
+	// 在所有 TaskType 註冊完成後，才載入資料庫中的排程
 	if err := schedMgr.LoadJobs(); err != nil {
-		log.Printf("[Scheduler] Failed to load persistent jobs: %v", err)
+		fmt.Printf("⚠️ [Scheduler] Failed to load persistent jobs: %v\n", err)
 	}
 
 	// 初始化記憶體管理器 (RAG)
@@ -153,10 +148,26 @@ func InitRegistry(bgMgr *BackgroundManager) *core.Registry {
 		workspacePath = home
 		log.Printf("[Init] WORKSPACE_PATH is empty, defaulting to home: %s", home)
 	}
+	// 讀取工具白名單字串
+	envTools := os.Getenv("PCAI_ENABLED_TOOLS")
+	var enabledTools []string
+	if envTools != "" {
+		// 將 "fs_read_file,fs_list_dir" 拆解為 slice
+		rawList := strings.Split(envTools, ",")
+		for _, t := range rawList {
+			// 清除可能存在的空格 (例如 " fs_read_file" -> "fs_read_file")
+			trimmed := strings.TrimSpace(t)
+			if trimmed != "" {
+				enabledTools = append(enabledTools, trimmed)
+			}
+		}
+	}
+	// 初始化檔案管理員
 	fsManager, err := NewFileSystemManager(workspacePath)
 	if err != nil {
 		log.Fatalf("無法初始化檔案系統: %v", err)
 	}
+	// 根據白名單載入工具
 
 	// 初始化並註冊工具
 	registry := core.NewRegistry()
