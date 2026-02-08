@@ -3,6 +3,7 @@ package gateway
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/asccclass/pcai/internal/agent"
 	"github.com/asccclass/pcai/internal/channel"
@@ -59,9 +60,33 @@ func (a *AgentAdapter) Process(env channel.Envelope) string {
 		fmt.Printf("[Telegram DEBUG] (%s) Sending prompt to Agent: %s\n", sessionID, env.Content)
 	}
 
+	// [NEW] 顯示正在輸入中 (Typing Indicator)
+	// 由於 Telegram 的 Typing 狀態只維持 5 秒，我們需要一個 Loop 來持續發送
+	stopTyping := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		// 立即觸發一次
+		if env.MarkProcessing != nil {
+			_ = env.MarkProcessing()
+		}
+		for {
+			select {
+			case <-stopTyping:
+				return
+			case <-ticker.C:
+				if env.MarkProcessing != nil {
+					_ = env.MarkProcessing()
+				}
+			}
+		}
+	}()
+
 	// 注意：這裡暫時不使用 stream callback (傳 nil)，因為 Telegram API 通常是一次性回覆
 	// 若要支援打字中或串流更新，需要更複雜的 channel 整合
 	response, err := myAgent.Chat(env.Content, nil)
+	close(stopTyping) // 停止輸入狀態
+
 	if err != nil {
 		fmt.Printf("[Telegram DEBUG] (%s) Agent Chat Error: %v\n", sessionID, err)
 		return fmt.Sprintf("⚠️ 系統錯誤: %v", err)
@@ -75,10 +100,15 @@ func (a *AgentAdapter) Process(env channel.Envelope) string {
 	// 所以這裡我們需要手動存檔
 	history.SaveSession(myAgent.Session)
 
-	// 自動執行 RAG 歸納檢查
-	// 為了避免每次對話都卡住太久，這部分可以考慮非同步執行，
-	// 但為了確保資料一致性，這裡先同步執行
-	history.CheckAndSummarize(myAgent.Session, a.modelName, a.systemPrompt)
+	// 自動執行 RAG 歸納檢查 (非同步執行，避免阻塞回應)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("[Telegram] Recovered from panic in CheckAndSummarize: %v\n", r)
+			}
+		}()
+		history.CheckAndSummarize(myAgent.Session, a.modelName, a.systemPrompt)
+	}()
 
 	return response
 }

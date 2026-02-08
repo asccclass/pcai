@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 
 	_ "modernc.org/sqlite" // 無 CGO 版本驅動
 )
@@ -63,7 +62,7 @@ func (db *DB) migrate() error {
 	if err != nil {
 		return fmt.Errorf("failed to run migration: %w", err)
 	}
-	log.Println("[Database] Tables initialized successfully.")
+	fmt.Println("✅ [Database] Tables initialized successfully.")
 	return nil
 }
 

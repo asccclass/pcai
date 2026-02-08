@@ -48,7 +48,7 @@ type ToolExecutor interface {
 // PCAIBrain 實作 scheduler.HeartbeatBrain 介面
 // 這裡可以放入你的 Ollama 客戶端、記憶管理器、Signal 客戶端等
 type PCAIBrain struct {
-	db          *database.DB
+	DB          *database.DB
 	httpClient  *resty.Client
 	ollamaURL   string
 	filterSkill *skills.FilterSkill
@@ -63,7 +63,7 @@ func (b *PCAIBrain) SetTools(executor ToolExecutor) {
 
 func NewPCAIBrain(db *database.DB, ollamaURL, modelName string) *PCAIBrain {
 	return &PCAIBrain{
-		db:          db,
+		DB:          db,
 		httpClient:  resty.New().SetTimeout(100 * time.Second).SetRetryCount(2),
 		ollamaURL:   ollamaURL,
 		modelName:   modelName,
@@ -148,7 +148,7 @@ func (b *PCAIBrain) CollectEnv(ctx context.Context) string {
 	sb.WriteString(fmt.Sprintf("當前時間: %s\n", time.Now().Format("15:04")))
 
 	// A. 載入資料庫中的自訂過濾規則 (自我學習的成果)
-	rules, _ := b.db.GetFilters(ctx)
+	rules, _ := b.DB.GetFilters(ctx)
 	sb.WriteString("### 自訂過濾規則 ###\n")
 	for _, r := range rules {
 		sb.WriteString(fmt.Sprintf("- 模式: %s -> 處理: %s\n", r["pattern"], r["action"]))
@@ -233,7 +233,7 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 	}
 
 	// 核心：將思考過程存入資料庫
-	b.db.CreateHeartbeatLog(ctx, snapshot, dec.Decision, dec.Reason, dec.Score, result.Response)
+	b.DB.CreateHeartbeatLog(ctx, snapshot, dec.Decision, dec.Reason, dec.Score, result.Response)
 
 	// 我們將決策與理由組合成一個字串回傳給 ExecuteDecision，或者修改 interface 傳遞 struct
 	// 這裡採用簡單的格式化回傳，方便 ExecuteDecision 處理
@@ -407,7 +407,7 @@ func (b *PCAIBrain) GenerateMorningBriefing(ctx context.Context) error {
 	          WHERE created_at > date('now', '-1 day') || ' 23:00:00' 
 	          AND is_briefed = 0`
 
-	rows, err := b.db.QueryContext(ctx, query)
+	rows, err := b.DB.QueryContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to query heartbeat logs: %w", err)
 	}
@@ -451,7 +451,7 @@ func (b *PCAIBrain) GenerateMorningBriefing(ctx context.Context) error {
 	b.dispatcher.Dispatch(ctx, "URGENT", "☀️ 早安！昨晚我為您處理了以下事務：\n\n"+briefing)
 
 	// --- 將簡報內容存入日誌資料庫 決策標記為 "REPORT: MORNING"，理由放簡報內容
-	err = b.db.CreateHeartbeatLog(
+	err = b.DB.CreateHeartbeatLog(
 		ctx,
 		"SYSTEM: MORNING_BRIEFING_TRIGGER", // 快照內容標記為系統觸發
 		"REPORT: MORNING",                  // 決策類型
@@ -465,7 +465,7 @@ func (b *PCAIBrain) GenerateMorningBriefing(ctx context.Context) error {
 
 	// 4. 更新舊日誌的標記
 	for _, id := range ids {
-		b.db.ExecContext(ctx, "UPDATE heartbeat_logs SET is_briefed = 1 WHERE id = ?", id)
+		b.DB.ExecContext(ctx, "UPDATE heartbeat_logs SET is_briefed = 1 WHERE id = ?", id)
 	}
 
 	return nil

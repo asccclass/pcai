@@ -17,6 +17,8 @@ type Envelope struct {
 	Platform string
 	// Reply 讓 Dispatcher 不需要知道如何調用 Telegram API 就能回覆
 	Reply func(text string) error
+	// MarkProcessing 顯示「正在輸入中...」或類似狀態
+	MarkProcessing func() error
 }
 
 // TelegramChannel 實作了適配器結構
@@ -69,6 +71,13 @@ func (t *TelegramChannel) Listen(handler func(Envelope)) {
 						text,
 					))
 					return err
+				},
+				MarkProcessing: func() error {
+					// 發送 "正在輸入" 狀態
+					return t.bot.SendChatAction(context.Background(), tu.ChatAction(
+						tu.ID(chatID),
+						telego.ChatActionTyping,
+					))
 				},
 			}
 

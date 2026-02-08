@@ -9,6 +9,7 @@ import (
 	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/llms"
 	"github.com/asccclass/pcai/llms/ollama"
+	"github.com/ollama/ollama/api"
 )
 
 // Agent 封裝了對話邏輯、工具呼叫與 Session 管理
@@ -102,6 +103,56 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 
 		// 將 AI 回應加入歷史
 		a.Session.Messages = append(a.Session.Messages, aiMsg)
+
+		// [FIX] 補救措施：如果 ToolCalls 為空，但 Content 看起來像是 JSON 工具呼叫
+		if len(aiMsg.ToolCalls) == 0 {
+			content := strings.TrimSpace(aiMsg.Content)
+			if strings.HasPrefix(content, "{") && strings.Contains(content, "\"name\"") {
+				// 嘗試解析這種非標準的 JSON 輸出
+				// 例如: {"type": "function", "name": "fs_append_to_file", "parameters": {...}}
+				var rawCall struct {
+					Name       string                         `json:"name"`
+					Parameters *api.ToolCallFunctionArguments `json:"parameters"` // 改變為指標以允許 nil 檢查
+					Arguments  *api.ToolCallFunctionArguments `json:"arguments"`
+				}
+
+				// 嘗試抓取 JSON 區塊 (以防前後有文字)
+				start := strings.Index(content, "{")
+				end := strings.LastIndex(content, "}")
+				if start != -1 && end != -1 && end > start {
+					jsonStr := content[start : end+1]
+					if err := json.Unmarshal([]byte(jsonStr), &rawCall); err == nil && rawCall.Name != "" {
+						fmt.Printf("🔍 [Agent] 偵測到原始 JSON 工具呼叫: %s\n", rawCall.Name)
+
+						// 參數相容性處理: 有些模型會用 parameters 代替 arguments
+						var finalArgs api.ToolCallFunctionArguments
+
+						if rawCall.Arguments != nil {
+							finalArgs = *rawCall.Arguments
+						} else if rawCall.Parameters != nil {
+							finalArgs = *rawCall.Parameters
+						} else {
+							// 若皆無，保持 zero value (假設 api.ToolCallFunctionArguments 是一個 struct，zero value 可用)
+							finalArgs = api.ToolCallFunctionArguments{}
+						}
+
+						// 建構標準 ToolCall
+						aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+							Function: api.ToolCallFunction{
+								Name:      rawCall.Name,
+								Arguments: finalArgs,
+							},
+						})
+
+						// 清空 Content 以免重複顯示 JSON 給使用者
+						// 但如果只有 JSON，我們將其清空；如果有其他解釋文字，可能要保留？
+						// 這裡選擇清空，因為我們已經轉成執行動作了
+						aiMsg.Content = ""
+						finalResponse = "" // 清除已累積的 Content
+					}
+				}
+			}
+		}
 
 		// 檢查是否呼叫工具
 		if len(aiMsg.ToolCalls) == 0 {
