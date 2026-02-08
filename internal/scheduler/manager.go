@@ -130,17 +130,17 @@ func NewManager(brain HeartbeatBrain, db *database.DB) *Manager {
 	// 新增任務：每天早上 07:00 執行晨間簡報
 	// Cron 格式: "分 時 日 月 週"
 	_, err := m.cron.AddFunc("0 7 * * *", func() {
-		fmt.Println("[Scheduler] 正在產生晨間簡報...")
+		fmt.Println("✅[Scheduler] 正在產生晨間簡報...")
 		ctx := context.Background()
 		// 呼叫我們之前實作的簡報功能
 		err := m.brain.GenerateMorningBriefing(ctx)
 		if err != nil {
-			fmt.Printf("[Scheduler] 晨間簡報執行失敗: %v\n", err)
+			fmt.Printf("⚠️ [Scheduler] 晨間簡報執行失敗: %v\n", err)
 		}
 	})
 
 	if err != nil {
-		fmt.Printf("[Scheduler] 註冊簡報任務失敗: %v\n", err)
+		fmt.Printf("⚠️ [Scheduler] 註冊簡報任務失敗: %v\n", err)
 	}
 	// m.startWorkers()
 
@@ -156,7 +156,7 @@ func (m *Manager) startWorkers() {
 		m.wg.Add(1)
 		go m.workerLoop(i + 1)
 	}
-	fmt.Printf("[Scheduler] 已啟動 Cron 引擎與 %d 個背景工作執行緒。\n", m.workerCount)
+	fmt.Printf("✅ [Scheduler] 已啟動 Cron 引擎與 %d 個背景工作執行緒。\n", m.workerCount)
 }
 
 func (m *Manager) workerLoop(id int) {
@@ -204,7 +204,7 @@ func (m *Manager) Stop() {
 	close(m.quit)
 	m.wg.Wait()
 
-	fmt.Println("[Scheduler] 所有排程與背景任務已停止。")
+	fmt.Println("✅ [Scheduler] 所有排程與背景任務已停止。")
 }
 
 // ==========================================
@@ -233,14 +233,14 @@ func (m *Manager) LoadJobs() error {
 		m.mu.RUnlock()
 
 		if !ok {
-			log.Printf("[Scheduler] Warning: Task type '%s' not registered for job '%s'. Skipping.", job.TaskType, job.Name)
+			log.Printf("⚠️ [Scheduler] Warning: Task type '%s' not registered for job '%s'. Skipping.", job.TaskType, job.Name)
 			continue
 		}
 
 		// 加入 Cron
 		id, err := m.cron.AddFunc(job.CronSpec, fn)
 		if err != nil {
-			log.Printf("[Scheduler] Error restoring job '%s' with spec '%s': %v", job.Name, job.CronSpec, err)
+			log.Printf("⚠️ [Scheduler] Error restoring job '%s' with spec '%s': %v", job.Name, job.CronSpec, err)
 			continue
 		}
 
@@ -253,7 +253,7 @@ func (m *Manager) LoadJobs() error {
 			Description: job.Description,
 		}
 		m.mu.Unlock()
-		fmt.Printf("[Scheduler] Restored job: %s (%s)\n", job.Name, job.CronSpec)
+		fmt.Printf("✅ [Scheduler] Restored job: %s (%s)\n", job.Name, job.CronSpec)
 	}
 	return nil
 }

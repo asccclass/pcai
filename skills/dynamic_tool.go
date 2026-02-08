@@ -1,3 +1,4 @@
+// skills/dynamic_tool.go 應該移到 internal/skillloader 目錄下
 package skills
 
 import (
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/asccclass/pcai/internal/core"
 	"github.com/ollama/ollama/api"
 	"gopkg.in/yaml.v3"
 )
@@ -20,31 +22,6 @@ type SkillDefinition struct {
 	Description string   `yaml:"description"`
 	Command     string   `yaml:"command"`
 	Params      []string `yaml:"-"` // 從 Command 解析出的參數參數名 (e.g. "query", "args")
-}
-
-// LoadSkills 從指定目錄載入所有技能定義 (Clawcode 標準: SKILL.md)
-func LoadSkills(dir string) ([]*SkillDefinition, error) {
-	var skills []*SkillDefinition
-
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && strings.EqualFold(d.Name(), "SKILL.md") {
-			skill, err := loadSkillFromFile(path)
-			if err != nil {
-				fmt.Printf("[Skills] Warning: Failed to load skill from %s: %v\n", path, err)
-				return nil // 繼續載入其他技能
-			}
-			skills = append(skills, skill)
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-	return skills, nil
 }
 
 // loadSkillFromFile 解析單一 SKILL.md 檔案
@@ -71,8 +48,34 @@ func loadSkillFromFile(path string) (*SkillDefinition, error) {
 	return &skill, nil
 }
 
+// LoadSkills 從指定目錄載入所有技能定義 (Clawcode 標準: SKILL.md)
+func LoadSkills(dir string) ([]*SkillDefinition, error) {
+	var skills []*SkillDefinition
+
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.EqualFold(d.Name(), "SKILL.md") {
+			skill, err := loadSkillFromFile(path)
+			if err != nil {
+				fmt.Printf("⚠️ [Skills] Warning: Failed to load skill from %s: %v\n", path, err)
+				return nil // 繼續載入其他技能
+			}
+			skills = append(skills, skill)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return skills, nil
+}
+
 // parseParams 解析 {{param}} 形式的參數
 func parseParams(cmd string) []string {
+	// 正則表達式：匹配 {{param}}
 	re := regexp.MustCompile(`\{\{(\w+)\}\}`)
 	matches := re.FindAllStringSubmatch(cmd, -1)
 	var params []string
@@ -91,11 +94,15 @@ func parseParams(cmd string) []string {
 
 // DynamicTool 實作 core.AgentTool 介面
 type DynamicTool struct {
-	Def *SkillDefinition
+	Def      *SkillDefinition
+	Registry *core.Registry
 }
 
-func NewDynamicTool(def *SkillDefinition) *DynamicTool {
-	return &DynamicTool{Def: def}
+func NewDynamicTool(def *SkillDefinition, registry *core.Registry) *DynamicTool {
+	return &DynamicTool{
+		Def:      def,
+		Registry: registry,
+	}
 }
 
 func (t *DynamicTool) Name() string {
@@ -151,7 +158,29 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 		finalCmd = strings.ReplaceAll(finalCmd, placeholder, valStr)
 	}
 
-	// 3. 背景執行
+	// 3. 判斷是否為內部工具呼叫
+	// 簡單啟發式：取得第一個單詞作為工具名稱
+	parts := strings.SplitN(finalCmd, " ", 2)
+	toolName := parts[0]
+	toolArgs := ""
+	if len(parts) > 1 {
+		toolArgs = parts[1]
+	}
+
+	// 嘗試從 Registry 查找工具
+	// 注意：我們需要 access 到 registry，這需要從外部注入
+	if t.Registry != nil {
+		// ALIAS: http_get -> fetch_url
+		// Also support direct usage of 'fetch_url' as an internal tool
+		if toolName == "http_get" || toolName == "fetch_url" {
+			// 去除引號，並組裝 JSON
+			url := strings.Trim(toolArgs, "\"'")
+			jsonParams := fmt.Sprintf(`{"url": "%s"}`, url)
+			return t.Registry.CallTool("fetch_url", jsonParams)
+		}
+	}
+
+	// 4. 背景執行 (Fallback to Shell)
 	// 使用開頭的字作為執行檔，後面的作為參數 (需要簡單的 split，不支援複雜的
 	// quote 處理)
 	// 為了支援 shell features (如 &&, |)，我們統一使用 sh -c (Linux) 或

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/joho/godotenv"
 )
 
 // Config 儲存全域配置參數
@@ -26,17 +29,40 @@ func getEnvBool(key string, fallback bool) bool {
 	return fallback
 }
 
+// ensureProtocol 確保 URL 有 http:// 或 https:// 前綴
+func ensureProtocol(url string) string {
+	if url == "" {
+		return ""
+	}
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return "http://" + url
+	}
+	return url
+}
+
 // getEnv 是輔助函式，用來處理環境變數與預設值的邏輯
 func getEnv(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
 	}
-	return fallback
+	return value
 }
 
 // LoadConfig 負責初始化配置，支援 .env 檔案與環境變數
 func LoadConfig() *Config {
-	home, _ := os.Executable()
+	// 載入 envfile 檔案
+	if err := godotenv.Overload("envfile"); err != nil {
+		// 如果存在但有錯誤則
+		if !os.IsNotExist(err) {
+			fmt.Printf("⚠️  [Main]  envfile 檔案存在但無法載入: %v\n", err)
+		}
+		fmt.Printf("⚠️  [Main] 無法從執行檔目錄載入 envfile: %v\n", err)
+		return nil
+	}
+	fmt.Println("✅ [Main] 成功載入 envfile (CWD)")
+
+	home, _ := os.Getwd()
 
 	// [NEW] 讀取外部 System Prompt
 	soulPath := "botcharacter/SOUL.md"
@@ -61,7 +87,7 @@ func LoadConfig() *Config {
 	return &Config{
 		// 從環境變數讀取，若無則使用後方的預設值
 		Model:        getEnv("PCAI_MODEL", "llama3.3"),
-		OllamaURL:    getEnv("OLLAMA_HOST", "http://localhost:11434"),
+		OllamaURL:    ensureProtocol(getEnv("OLLAMA_HOST", "http://localhost:11434")),
 		SystemPrompt: getEnv("PCAI_SYSTEM_PROMPT", CoreSystemPrompt),
 		FontPath:     getEnv("PCAI_FONT_PATH", filepath.Join(home, "assets", "fonts", "msjh.ttf")),
 		OutputDir:    getEnv("PCAI_PDF_OUTPUT_DIR", "./exports"),

@@ -45,13 +45,13 @@ func (t *TelegramChannel) Listen(handler func(Envelope)) {
 	// But here we just want it to run forever, so we use Background and don't cancel explicitly.
 	updates, err := t.bot.UpdatesViaLongPolling(context.Background(), nil)
 	if err != nil {
-		log.Fatalf("無法啟動長輪詢: %v", err)
+		log.Fatalf("⚠️ [Telegram] 無法啟動長輪詢: %v", err)
 		os.Exit(1)
 	}
 
 	// defer t.bot.StopLongPolling() // Removed as it is undefined
 
-	log.Println("Telegram 頻道已啟動，監聽中...")
+	log.Println("✅ [Telegram] 頻道已啟動，監聽中...")
 
 	for update := range updates {
 		// 我們只處理文字訊息

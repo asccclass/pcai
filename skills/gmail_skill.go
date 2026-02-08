@@ -23,6 +23,12 @@ type GmailSkill struct {
 }
 
 func NewGmailSkill(client *api.Client, modelName, tgToken, tgChatID string) *GmailSkill {
+	if tgToken == "" {
+		tgToken = os.Getenv("TELEGRAM_TOKEN")
+	}
+	if tgChatID == "" {
+		tgChatID = os.Getenv("TELEGRAM_ADMIN_ID")
+	}
 	return &GmailSkill{
 		ollamaClient:   client,
 		modelName:      modelName,
@@ -110,7 +116,7 @@ func (s *GmailSkill) Execute(cfg gmail.FilterConfig) {
 				log.Println("✅ [GmailSkill] Telegram 通知已送出")
 			}
 		} else {
-			log.Println("⚠️ [GmailSkill] 未設定 Telegram Token/ChatID，無法發送通知")
+			log.Println("🚨 [GmailSkill] 未設定 Telegram Token/ChatID，無法發送通知")
 		}
 	}
 

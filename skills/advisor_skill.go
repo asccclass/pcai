@@ -15,13 +15,6 @@ type AdvisorSkill struct {
 	modelName string
 }
 
-func NewAdvisorSkill(client *api.Client, modelName string) *AdvisorSkill {
-	return &AdvisorSkill{
-		client:    client,
-		modelName: modelName,
-	}
-}
-
 // AdvisorTool 是暴露給 AI 使用的工具
 type AdvisorTool struct {
 	skill *AdvisorSkill
@@ -29,6 +22,13 @@ type AdvisorTool struct {
 
 func (s *AdvisorSkill) CreateTool() *AdvisorTool {
 	return &AdvisorTool{skill: s}
+}
+
+func NewAdvisorSkill(client *api.Client, modelName string) *AdvisorSkill {
+	return &AdvisorSkill{
+		client:    client,
+		modelName: modelName,
+	}
 }
 
 func (t *AdvisorTool) Name() string {

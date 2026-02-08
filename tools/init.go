@@ -133,7 +133,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 	mdPath := filepath.Join(kbDir, "knowledge.md")        // 原始 Markdown 檔案
 
 	// 建立 Embedder
-	embedder := memory.NewOllamaEmbedder(os.Getenv("PCAI_OLLAMA_URL"), "mxbai-embed-large")
+	embedder := memory.NewOllamaEmbedder(os.Getenv("OLLAMA_HOST"), "mxbai-embed-large")
 
 	// 建立 Manager
 	memManager := memory.NewManager(jsonPath, embedder)
@@ -143,11 +143,11 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 
 	// 檔案系統管理器，設定 "Sandbox" 根目錄
 	workspacePath := os.Getenv("WORKSPACE_PATH")
-	log.Printf("[Init] WORKSPACE_PATH env: '%s'", workspacePath)
 	if workspacePath == "" {
 		workspacePath = home
-		log.Printf("[Init] WORKSPACE_PATH is empty, defaulting to home: %s", home)
+		log.Printf("⚠️ [Init] WORKSPACE_PATH is empty, defaulting to home: %s", home)
 	}
+	fmt.Printf("✅ [Init] Set WORKSPACE_PATH env is: '%s'\n", workspacePath)
 	// 讀取工具白名單字串
 	envTools := os.Getenv("PCAI_ENABLED_TOOLS")
 	var enabledTools []string
@@ -165,15 +165,12 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 	// 初始化檔案管理員
 	fsManager, err := NewFileSystemManager(workspacePath)
 	if err != nil {
-		log.Fatalf("無法初始化檔案系統: %v", err)
+		log.Fatalf("⚠️ 無法初始化檔案系統: %v", err)
 	}
 	// 根據白名單載入工具
 
 	// 初始化並註冊工具
 	registry := core.NewRegistry()
-
-	// 注入工具執行器到大腦
-	myBrain.SetTools(registry)
 
 	// 基礎工具
 	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
@@ -212,12 +209,12 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 	skillsDir := filepath.Join(home, "skills")
 	dynamicSkills, err := skills.LoadSkills(skillsDir)
 	if err != nil {
-		log.Printf("[Skills] 無法載入 skills.md: %v", err)
+		log.Printf("⚠️ [Skills] 無法載入 skills.md: %v", err)
 	} else {
 		for _, ds := range dynamicSkills {
-			toolStr := skills.NewDynamicTool(ds)
+			toolStr := skills.NewDynamicTool(ds, registry)
 			registry.Register(toolStr)
-			log.Printf("[Skills] 已註冊動態技能: %s", toolStr.Name())
+			fmt.Printf("✅ [Skills] 已註冊動態技能: %s\n", toolStr.Name())
 		}
 	}
 
@@ -244,6 +241,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 			log.Println("✅ Telegram Channel 已啟動並連接至 Gateway")
 		}
 	}
+
+	// 注入工具執行器到大腦
+	myBrain.SetTools(registry)
 
 	return registry
 }
