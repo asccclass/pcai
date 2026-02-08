@@ -4,8 +4,7 @@
 *.x
 credentials.json
 token.json
-botmemory/backup/*
 envfile
-botmemory/history/*
+botmemory/*
 user_workspace/*
 sandbox/*
