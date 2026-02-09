@@ -75,8 +75,8 @@ func SyncMemory(mem *memory.Manager, filePath string) {
 // 全域註冊表實例
 var DefaultRegistry = core.NewRegistry()
 
-// Init 初始化工具註冊表
-func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
+// InitRegistry 初始化工具註冊表
+func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent func()) *core.Registry {
 	home, _ := os.Getwd() // 程式碼根目錄
 
 	// 建立 Ollama API 客戶端
@@ -99,6 +99,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 	// 初始化排程管理器(Hybrid Manager)
 	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model)
 	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
+	if onAsyncEvent != nil {
+		schedMgr.OnCompletion = onAsyncEvent // 當排程任務完成輸出後，恢復提示符
+	}
 
 	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
 	schedMgr.RegisterTaskType("read_email", func() {
@@ -177,6 +180,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 	registry.Register(&KnowledgeSearchTool{})
 	registry.Register(&FetchURLTool{})
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
+	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
 
@@ -230,6 +234,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config) *core.Registry {
 
 		// 2. 建立 Dispatcher
 		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)
+		if onAsyncEvent != nil {
+			dispatcher.OnCompletion = onAsyncEvent
+		}
 
 		// 3. 建立 Telegram Channel
 		tgChannel, err := channel.NewTelegramChannel(cfg.TelegramToken)

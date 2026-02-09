@@ -60,6 +60,9 @@ type Manager struct {
 	// Heartbeat 相關
 	isThinking int32 // 防止重複執行
 	brain      HeartbeatBrain
+
+	// UI Callback
+	OnCompletion func()
 }
 
 // runHeartbeat 是核心邏輯
@@ -76,6 +79,11 @@ func (m *Manager) runHeartbeat() {
 	defer cancel()
 
 	fmt.Printf("[Scheduler] Heartbeat started at %s\n", time.Now().Format("15:04:05"))
+
+	// 確保無論如何結束都會嘗試恢復提示符 (但要小心不要與其他輸出衝突，這裡主要針對 Heartbeat 結束後的狀態)
+	if m.OnCompletion != nil {
+		defer m.OnCompletion()
+	}
 
 	// 2. 感知 (Sensing)S
 	snapshot := m.brain.CollectEnv(ctx)

@@ -19,6 +19,9 @@ type Dispatcher struct {
 	// 使用 Map 存儲授權用戶，並用 RWMutex 保證並發安全
 	authorizedUsers sync.Map
 	adminID         string
+
+	// 事件回調
+	OnCompletion func()
 }
 
 // NewDispatcher 初始化調度器
@@ -72,6 +75,11 @@ func (d *Dispatcher) HandleMessage(env channel.Envelope) {
 			}
 		} else {
 			log.Printf("[Dispatcher] Empty response, skipping reply.")
+		}
+
+		// 觸發完成事件 (例如通知 CLI 重印 Prompt)
+		if d.OnCompletion != nil {
+			d.OnCompletion()
 		}
 	}()
 }
