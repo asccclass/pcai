@@ -54,7 +54,7 @@ func FetchLatestEmails(cfg FilterConfig) (string, error) {
 	}
 
 	// 2. 配置 OAuth2 .GmailModifyScope
-	config, err := google.ConfigFromJSON(b, gmail.GmailReadonlyScope)
+	config, err := google.ConfigFromJSON(b, gmail.GmailModifyScope)
 	if err != nil {
 		return "", fmt.Errorf("解析憑證失敗: %v", err)
 	}

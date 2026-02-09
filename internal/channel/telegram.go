@@ -6,8 +6,11 @@ import (
 	"log"
 	"os"
 
+	"time"
+
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
+	"github.com/valyala/fasthttp"
 )
 
 // Envelope 封裝了跨平台的統一訊息格式
@@ -28,8 +31,15 @@ type TelegramChannel struct {
 
 // NewTelegramChannel 初始化機器人
 func NewTelegramChannel(token string) (*TelegramChannel, error) {
-	// 使用預設配置初始化
-	bot, err := telego.NewBot(token)
+	// 建立自定義的 FastHTTP 客戶端，設定較長的超時時間
+	// 這是為了配合長輪詢 (Long Polling)
+	client := &fasthttp.Client{
+		ReadTimeout:  70 * time.Second, // 比長輪詢的 60 秒稍長
+		WriteTimeout: 70 * time.Second,
+	}
+
+	// 使用自定義的 HTTP 客戶端初始化 Bot
+	bot, err := telego.NewBot(token, telego.WithFastHTTPClient(client))
 	if err != nil {
 		return nil, err
 	}
@@ -39,11 +49,11 @@ func NewTelegramChannel(token string) (*TelegramChannel, error) {
 // Listen 啟動長輪詢 (Long Polling) 監聽訊息
 // 當收到訊息時，會封裝成 Envelope 並丟給傳入的 handler 處理
 func (t *TelegramChannel) Listen(handler func(Envelope)) {
-	// 取得訊息更新通道
-	// UpdatesViaLongPolling requires (ctx, params, options...)
-	// Since StopLongPolling is removed, we control it via context.
-	// But here we just want it to run forever, so we use Background and don't cancel explicitly.
-	updates, err := t.bot.UpdatesViaLongPolling(context.Background(), nil)
+	// 設定長輪詢參數
+	// Timeout 設定為 60 秒，告訴 Telegram 伺服器若無新訊息則保持連線 60 秒
+	updates, err := t.bot.UpdatesViaLongPolling(context.Background(), &telego.GetUpdatesParams{
+		Timeout: 60,
+	})
 	if err != nil {
 		log.Fatalf("⚠️ [Telegram] 無法啟動長輪詢: %v", err)
 		os.Exit(1)
