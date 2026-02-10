@@ -424,7 +424,7 @@
             <h1 class="hero-title">Personalized Contextual AI<br><span
                     style="color: var(--primary-color); font-size: 0.6em; display: block; margin-top: 10px; font-weight: 600;">你的本地
                     AI 程式開發助手</span></h1>
-            <p class="hero-subtitle">整合 Ollama 本地模型、RAG 長期記憶與強大的工具呼叫功能。專為開發者設計，讓 AI 直接與你的開發環境深度互動。</p>
+            <p class="hero-subtitle">整合 Ollama 本地模型、RAG 長期記憶、強大的工具呼叫與可擴充的技能市集。專為開發者設計，讓 AI 直接與你的開發環境深度互動。</p>
             <div class="hero-actions">
                 <a href="#install" class="btn btn-primary">立即安裝</a>
                 <a href="#features" class="btn btn-outline">了解更多</a>
@@ -445,9 +445,9 @@
                     <div class="terminal-title">pcai-cli — bash — 80x24</div>
                 </div>
                 <div class="terminal-body">
-                    <div><span class="prompt">➜</span> <span class="cmd">./pcai.exe chat -m llama3</span></div>
+                    <div><span class="prompt">➜</span> <span class="cmd">./pcai.exe chat -m llama3.3</span></div>
                     <span class="output">Welcome to PCAI! Local Knowledge Loaded. <span class="highlight">Using Model:
-                            llama3</span></span>
+                            llama3.3</span></span>
                     <br>
                     <div><span class="prompt">User:</span> <span class="cmd">幫我把 assets 資料夾裡的影片轉成 mp4</span></div>
                     <br>
@@ -456,6 +456,16 @@
                     <span class="output">[TOOL CALL] convert_videos(input="assets", format="mp4")</span>
                     <span class="output">Converting video1.mov -> video1.mp4 ... [Done]</span>
                     <span class="output">Converting video2.avi -> video2.mp4 ... [Done]</span>
+                    <br>
+                    <div><span class="prompt">User:</span> <span class="cmd">從 GitHub 安裝 image_processor 技能</span></div>
+                    <br>
+                    <div><span class="prompt">PCAI:</span> <span class="cmd">好的，我將使用 `install_github_skill` 工具。</span>
+                    </div>
+                    <span class="output">[TOOL CALL]
+                        install_github_skill(repo_url="https://github.com/user/image_processor",
+                        skill_name="image_processor")</span>
+                    <span class="output">Cloning into 'skills/image_processor'... [Done]</span>
+                    <span class="output">成功安裝技能: image_processor。你現在可以開始使用它了。</span>
                 </div>
             </div>
         </div>
@@ -508,6 +518,27 @@
                     <div class="feature-icon">💻</div>
                     <h3 class="feature-title">跨平台支援</h3>
                     <p class="feature-text">完美支援 Windows, macOS 與 Linux (含 ARM64)，一次編寫，到處執行。</p>
+                </div>
+
+                <!-- Feature 7: Dynamic Skills -->
+                <div class="feature-card">
+                    <div class="feature-icon">🧩</div>
+                    <h3 class="feature-title">動態 Sidecar 技能</h3>
+                    <p class="feature-text">透過 Docker Sidecar 模式執行外部技能，每個技能都在獨立容器中安全運行，支援任意程式語言與依賴。</p>
+                </div>
+
+                <!-- Feature 8: Skill Installer -->
+                <div class="feature-card">
+                    <div class="feature-icon">📦</div>
+                    <h3 class="feature-title">GitHub 技能安裝器</h3>
+                    <p class="feature-text">AI 可直接從 GitHub 下載並安裝新技能，即時註冊無需重啟，讓能力擴展如同安裝 App 一樣簡單。</p>
+                </div>
+
+                <!-- Feature 9: Skill Persistence -->
+                <div class="feature-card">
+                    <div class="feature-icon">💾</div>
+                    <h3 class="feature-title">技能持久化記憶</h3>
+                    <p class="feature-text">已安裝的技能會自動記錄到 Registry，重新啟動時自動載入，不遺忘任何已學會的能力。</p>
                 </div>
             </div>
         </div>
@@ -575,11 +606,6 @@ make build
             </div>
         </div>
     </footer>
-    <script defer
-        src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015"
-        integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ=="
-        data-cf-beacon='{"version":"2024.11.0","token":"a466dd9fb3f144898aafe83bf74cc7a4","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}'
-        crossorigin="anonymous"></script>
 </body>
 
 </html>

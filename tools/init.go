@@ -226,6 +226,17 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	}
 
 	skillsDir := filepath.Join(home, "skills")
+
+	// 初始化 SkillManager (負責持久化與 Registry 載入)
+	skillRegistryPath := filepath.Join(home, "botmemory", "skillregistry.json")
+	skillManager := NewSkillManager(skillsDir, skillRegistryPath, registry, dockerCli)
+
+	// 1. 從 Registry 回憶已安裝的技能 (持久化清單)
+	if err := skillManager.LoadAll(); err != nil {
+		log.Printf("⚠️ [Skills] LoadAll failed: %v", err)
+	}
+
+	// 2. 掃描目錄載入手動新增的 SKILL.md (向下相容)
 	dynamicSkills, err := skills.LoadSkills(skillsDir)
 	if err != nil {
 		log.Printf("⚠️ [Skills] 無法載入 skills.md: %v", err)
@@ -233,18 +244,16 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 		for _, ds := range dynamicSkills {
 			toolStr := skills.NewDynamicTool(ds, registry, dockerCli)
 			registry.Register(toolStr)
-			fmt.Printf("✅ [Skills] 已註冊動態技能: %s\n", toolStr.Name())
 		}
 	}
 
 	// 新增 Skill 腳手架建立工具 (Meta-Tool)
 	registry.Register(&CreateSkillTool{})
 
-	// [NEW] 註冊 GitHub Skill Installer
+	// 註冊 GitHub Skill Installer
 	registry.Register(&SkillInstaller{
-		Registry:     registry,
-		BaseDir:      skillsDir,
-		DockerClient: dockerCli,
+		Manager: skillManager,
+		BaseDir: skillsDir,
 	})
 
 	// --- 新增：Telegram 整合 ---

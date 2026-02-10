@@ -7,16 +7,13 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/asccclass/pcai/internal/core"
 	"github.com/asccclass/pcai/skills"
-	dclient "github.com/docker/docker/client"
 	"github.com/ollama/ollama/api"
 )
 
 type SkillInstaller struct {
-	Registry     *core.Registry
-	BaseDir      string
-	DockerClient *dclient.Client
+	Manager *SkillManager
+	BaseDir string
 }
 
 func (i *SkillInstaller) Name() string { return "install_github_skill" }
@@ -121,9 +118,14 @@ func (i *SkillInstaller) Run(argsJSON string) (string, error) {
 		def = loadedSkills[0] // 取第一個
 	}
 
-	// 4. Register
-	dynamicTool := skills.NewDynamicTool(def, i.Registry, i.DockerClient)
-	i.Registry.Register(dynamicTool)
+	// 4. Register & Persist
+	dynamicTool := skills.NewDynamicTool(def, i.Manager.Registry, i.Manager.DockerClient)
+	i.Manager.Registry.Register(dynamicTool)
+
+	// 5. 寫入持久化清單
+	if err := i.Manager.RegisterSkill(def.Name, targetPath); err != nil {
+		fmt.Printf("⚠️ [SkillInstaller] 持久化失敗: %v\n", err)
+	}
 
 	return fmt.Sprintf("成功安裝技能: %s (Repo: %s)。你現在可以開始使用它了。", def.Name, args.RepoURL), nil
 }
