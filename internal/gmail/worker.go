@@ -2,14 +2,12 @@ package gmail
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 
-	"golang.org/x/oauth2"
+	"github.com/asccclass/pcai/internal/googleauth"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
@@ -60,7 +58,7 @@ func FetchLatestEmails(cfg FilterConfig) (string, error) {
 	}
 
 	// 3. 取得授權的 HTTP Client
-	client := getClient(config)
+	client := googleauth.GetClient(config)
 
 	// 4. 初始化 Gmail 服務
 	srv, err := gmail.NewService(ctx, option.WithHTTPClient(client))
@@ -144,49 +142,67 @@ func fetchAndFilter(srv *gmail.Service, cfg FilterConfig) (string, error) {
 }
 
 // --- OAuth2 輔助函式 ---
+// 已重構至 internal/googleauth
 
-func getClient(config *oauth2.Config) *http.Client {
-	tokenFile := "token.json"
-	tok, err := tokenFromFile(tokenFile)
+// SearchEmails 根據關鍵字搜尋郵件
+func SearchEmails(query string, maxResults int64) (string, error) {
+	ctx := context.Background()
+
+	b, err := os.ReadFile("credentials.json")
 	if err != nil {
-		tok = getTokenFromWeb(config)
-		saveToken(tokenFile, tok)
-	}
-	return config.Client(context.Background(), tok)
-}
-
-func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
-	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("⚠️  請在瀏覽器開啟以下連結授權 PCAI 存取 Gmail:\n\n%v\n\n請輸入驗證碼: ", authURL)
-
-	var authCode string
-	if _, err := fmt.Scan(&authCode); err != nil {
-		log.Fatalf("無法讀取驗證碼: %v", err)
+		return "", fmt.Errorf("無法讀取 credentials.json: %v", err)
 	}
 
-	tok, err := config.Exchange(context.TODO(), authCode)
+	config, err := google.ConfigFromJSON(b, gmail.GmailModifyScope)
 	if err != nil {
-		log.Fatalf("換取 Token 失敗: %v", err)
+		return "", fmt.Errorf("解析憑證失敗: %v", err)
 	}
-	return tok
-}
 
-func tokenFromFile(file string) (*oauth2.Token, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	tok := &oauth2.Token{}
-	err = json.NewDecoder(f).Decode(tok)
-	return tok, err
-}
+	client := googleauth.GetClient(config)
 
-func saveToken(path string, token *oauth2.Token) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	srv, err := gmail.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
-		log.Fatalf("儲存 Token 失敗: %v", err)
+		return "", fmt.Errorf("無法啟動 Gmail 服務: %v", err)
 	}
-	defer f.Close()
-	json.NewEncoder(f).Encode(token)
+
+	user := "me"
+	// 如果 query 為空，預設為未讀
+	if query == "" {
+		query = "is:unread"
+	}
+
+	r, err := srv.Users.Messages.List(user).Q(query).MaxResults(maxResults).Do()
+	if err != nil {
+		return "", fmt.Errorf("API 請求失敗: %v", err)
+	}
+
+	if len(r.Messages) == 0 {
+		return "", nil // 回傳空字串表示無結果
+	}
+
+	var result strings.Builder
+	for _, m := range r.Messages {
+		msg, err := srv.Users.Messages.Get(user, m.Id).Format("metadata").Do()
+		if err != nil {
+			continue
+		}
+
+		subject := ""
+		from := ""
+		for _, h := range msg.Payload.Headers {
+			if h.Name == "Subject" {
+				subject = h.Value
+			}
+			if h.Name == "From" {
+				from = h.Value
+			}
+		}
+
+		result.WriteString(fmt.Sprintf("【寄件者】: %s\n", from))
+		result.WriteString(fmt.Sprintf("【主旨】: %s\n", subject))
+		result.WriteString(fmt.Sprintf("【內容摘要】: %s\n", msg.Snippet))
+		result.WriteString("------------------------------------------\n")
+	}
+
+	return result.String(), nil
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/ollama/ollama/api"
 )
@@ -68,9 +69,25 @@ func ChatStream(modelName string, messages []Message, tools []api.Tool, opts Opt
 	// 處理 URL 結尾
 	ollamaURL = strings.TrimSuffix(ollamaURL, "/")
 
-	resp, err := http.Post(ollamaURL+"/api/chat", "application/json", bytes.NewBuffer(jsonData))
+	var resp *http.Response
+	maxRetries := 3
+
+	for i := 0; i < maxRetries; i++ {
+		// 每次重試都需要一個新的 Reader，因為 http.Post 會讀取它
+		resp, err = http.Post(ollamaURL+"/api/chat", "application/json", bytes.NewBuffer(jsonData))
+		if err == nil {
+			break
+		}
+
+		// 若發生連線錯誤 (例如 connectex)，等待後重試
+		if i < maxRetries-1 {
+			fmt.Printf("⚠️ 連線至 Ollama 失敗 (嘗試 %d/%d): %v\n⏳ 3秒後重試...\n", i+1, maxRetries, err)
+			time.Sleep(3 * time.Second)
+		}
+	}
+
 	if err != nil {
-		return Message{}, fmt.Errorf("連線至 Ollama 失敗: %v", err)
+		return Message{}, fmt.Errorf("連線至 Ollama 失敗 (已重試 %d 次): %v", maxRetries, err)
 	}
 	defer resp.Body.Close()
 

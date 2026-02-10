@@ -45,7 +45,7 @@ func runChat(cmd *cobra.Command, args []string) {
 	// --- 緊湊型 Glamour 樣式設定 ---
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
-		glamour.WithWordWrap(100),
+		glamour.WithWordWrap(0), // 自動適配終端寬度，不強制切斷
 	)
 
 	// 初始化背景執行管理器(Background Manager)

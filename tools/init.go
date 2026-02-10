@@ -112,9 +112,16 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 			MaxResults:     5,
 		}
 		// 重構後：使用 Skill 層的 Adapter
+
 		myGmailSkill := skills.NewGmailSkill(client, cfg.Model, cfg.TelegramToken, cfg.TelegramAdminID)
 		myGmailSkill.Execute(gmailCfg)
 	})
+
+	schedMgr.RegisterTaskType("read_calendar", func() {
+		myCalendarSkill := skills.NewCalendarSkill(client, cfg.Model)
+		myCalendarSkill.Execute()
+	})
+
 	schedMgr.RegisterTaskType("backup_knowledge", func() {
 		msg, err := AutoBackupKnowledge()
 		if err != nil {
@@ -184,6 +191,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
+	registry.Register(&CalendarTool{})
+	registry.Register(&ListCalendarsTool{})
+	registry.Register(&EmailTool{})
 
 	// Python Sandbox Tool
 	if pyTool, err := NewPythonSandboxTool(workspacePath); err != nil {

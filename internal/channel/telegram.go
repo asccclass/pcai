@@ -61,7 +61,7 @@ func (t *TelegramChannel) Listen(handler func(Envelope)) {
 
 	// defer t.bot.StopLongPolling() // Removed as it is undefined
 
-	log.Println("✅ [Telegram] 頻道已啟動，監聽中...")
+	fmt.Println("✅ [Telegram] 頻道已啟動，監聽中...")
 
 	for update := range updates {
 		// 我們只處理文字訊息
