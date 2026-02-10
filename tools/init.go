@@ -184,6 +184,13 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
 
+	// Python Sandbox Tool
+	if pyTool, err := NewPythonSandboxTool(workspacePath); err != nil {
+		fmt.Printf("⚠️ [Tools] Python Sandbox not available: %v\n", err)
+	} else {
+		registry.Register(pyTool)
+	}
+
 	// 記憶相關工具
 	registry.Register(NewMemoryTool(memManager))             // 搜尋工具
 	registry.Register(NewMemorySaveTool(memManager, mdPath)) // 儲存工具 (存入 Markdown)
