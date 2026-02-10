@@ -2,6 +2,7 @@
 *.old
 *.txt
 *.x
+*.log
 credentials.json
 token.json
 envfile

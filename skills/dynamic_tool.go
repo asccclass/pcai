@@ -2,8 +2,11 @@
 package skills
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -15,6 +18,10 @@ import (
 	"time"
 
 	"github.com/asccclass/pcai/internal/core"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/ollama/ollama/api"
 	"gopkg.in/yaml.v3"
 )
@@ -23,11 +30,13 @@ import (
 type SkillDefinition struct {
 	Name          string                       `yaml:"name"`
 	Description   string                       `yaml:"description"`
-	Command       string                       `yaml:"command"`
+	Command       string                       `yaml:"command"`        // 入口指令 (e.g. "python main.py {{args}}")
+	Image         string                       `yaml:"image"`          // Docker Image (e.g. "python:3.9-slim"), 若為空則使用本地 Shell
 	CacheDuration string                       `yaml:"cache_duration"` // 支援快取時間設定 (e.g. "3h", "10m")
 	Options       map[string][]string          `yaml:"options"`        // 參數選項 (param -> [option1, option2])
 	OptionAliases map[string]map[string]string `yaml:"option_aliases"` // 參數別名 (param -> {alias: canonical_value})
 	Params        []string                     `yaml:"-"`              // 從 Command 解析出的參數參數名 (e.g. "query", "args")
+	RepoPath      string                       `yaml:"-"`              // 本地代碼路徑 (包含 SKILL.md 的目錄)
 }
 
 // loadSkillFromFile 解析單一 SKILL.md 檔案
@@ -49,8 +58,11 @@ func loadSkillFromFile(path string) (*SkillDefinition, error) {
 		return nil, fmt.Errorf("yaml parse error: %v", err)
 	}
 
+	// 設定 RepoPath (SKILL.md 所在的目錄)
+	skill.RepoPath = filepath.Dir(path)
+
 	// 解析參數
-	skill.Params = parseParams(skill.Command)
+	skill.Params = ParseParams(skill.Command)
 	return &skill, nil
 }
 
@@ -79,8 +91,8 @@ func LoadSkills(dir string) ([]*SkillDefinition, error) {
 	return skills, nil
 }
 
-// parseParams 解析 {{param}} 或 {{func:param}} 形式的參數
-func parseParams(cmd string) []string {
+// ParseParams 解析 {{param}} 或 {{func:param}} 形式的參數
+func ParseParams(cmd string) []string {
 	// 正則表達式：匹配 {{...}}
 	re := regexp.MustCompile(`\{\{([^}]+)\}\}`)
 	matches := re.FindAllStringSubmatch(cmd, -1)
@@ -193,19 +205,21 @@ type CacheEntry struct {
 
 // DynamicTool 實作 core.AgentTool 介面
 type DynamicTool struct {
-	Def      *SkillDefinition
-	Registry *core.Registry
+	Def          *SkillDefinition
+	Registry     *core.Registry
+	DockerClient *client.Client // 支援 Docker 執行
 
 	// 快取相關
 	Cache      map[string]CacheEntry
 	CacheMutex sync.RWMutex
 }
 
-func NewDynamicTool(def *SkillDefinition, registry *core.Registry) *DynamicTool {
+func NewDynamicTool(def *SkillDefinition, registry *core.Registry, dockerCli *client.Client) *DynamicTool {
 	return &DynamicTool{
-		Def:      def,
-		Registry: registry,
-		Cache:    make(map[string]CacheEntry),
+		Def:          def,
+		Registry:     registry,
+		DockerClient: dockerCli,
+		Cache:        make(map[string]CacheEntry),
 	}
 }
 
@@ -294,16 +308,6 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 				if match != valStr {
 					fmt.Printf("⚠️ [DynamicTool] Auto-correction: '%s' -> '%s' (param: %s)\n", valStr, match, k)
 					args[k] = match // 更新為正確的值
-
-					// 更新 cacheKey (因為 args 變了)
-					// 注意：如果 Cache Key 是基於原始 JSON 生成的，這裡變更後應該要重算
-					// 但我們上面已經算過 Cache Logic 了...
-					// 修正：Cache Logic 應該移到這裡之後，或者 Cache Key 應該基於「校正後」的參數
-					// 為了簡單起見，我們接受：如果 User 輸入錯字 -> Cache Miss -> 這裡校正 -> 執行正確指令 -> 寫入 Cache (Key 是原始錯字 JSON?)
-					// 不，這樣下次錯字還是會 Miss。
-					// 理想：Cache Key 應該是 Canonical 的。
-					// 但為了不大幅重構，我們暫時接受 Cache Key 是原始輸入。
-					// 不過，既然我們改了 args[k]，下面的 cmd 替換就會用正確的值。
 				}
 			} else {
 				fmt.Printf("⚠️ [DynamicTool] Warning: Value '%s' for param '%s' is not in allowed options.\n", valStr, k)
@@ -363,45 +367,128 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 	var result string
 	var executionErr error
 
-	// 3. 判斷是否為內部工具呼叫
-	// 簡單啟發式：取得第一個單詞作為工具名稱
-	parts := strings.SplitN(finalCmd, " ", 2)
-	toolName := parts[0]
-	toolArgs := ""
-	if len(parts) > 1 {
-		toolArgs = parts[1]
-	}
+	// 3. 判斷是否為內部工具呼叫 (Registry Call)
+	// 如果 Registry 存在且命令以 http_get 等開頭，則走內部工具
+	// 規則：如果 Def.Image 有設定，則強制走 Docker。否則嘗試 Registry -> Shell。
+	useDocker := t.DockerClient != nil && t.Def.Image != ""
 
-	// 嘗試從 Registry 查找工具
-	// 注意：我們需要 access 到 registry，這需要從外部注入
-	if t.Registry != nil {
-		// ALIAS: http_get -> fetch_url
-		// Also support direct usage of 'fetch_url' as an internal tool
-		if toolName == "http_get" || toolName == "fetch_url" {
-			// 去除引號，並組裝 JSON
-			targetURL := strings.Trim(toolArgs, "\"'")
-			jsonParams := fmt.Sprintf(`{"url": "%s"}`, targetURL)
+	if !useDocker {
+		// 簡單啟發式：取得第一個單詞作為工具名稱
+		parts := strings.SplitN(finalCmd, " ", 2)
+		toolName := parts[0]
+		toolArgs := ""
+		if len(parts) > 1 {
+			toolArgs = parts[1]
+		}
 
-			result, executionErr = t.Registry.CallTool("fetch_url", jsonParams)
+		// 嘗試從 Registry 查找工具
+		if t.Registry != nil {
+			// ALIAS: http_get -> fetch_url
+			if toolName == "http_get" || toolName == "fetch_url" {
+				targetURL := strings.Trim(toolArgs, "\"'")
+				jsonParams := fmt.Sprintf(`{"url": "%s"}`, targetURL)
+				result, executionErr = t.Registry.CallTool("fetch_url", jsonParams)
+			}
+		}
+	} else {
+		// --- Docker Execution (Sidecar Mode) ---
+		fmt.Printf("🚀 [DynamicSkill] Executing %s in Docker (Image: %s)...\n", t.Name(), t.Def.Image)
+		ctx := context.Background()
+
+		// 1. 檢查映像檔
+		_, _, err := t.DockerClient.ImageInspectWithRaw(ctx, t.Def.Image)
+		if client.IsErrNotFound(err) {
+			fmt.Printf("Image %s not found, pulling...\n", t.Def.Image)
+			reader, err := t.DockerClient.ImagePull(ctx, t.Def.Image, types.ImagePullOptions{})
+			if err != nil {
+				return "", fmt.Errorf("pull image failed: %v", err)
+			}
+			defer reader.Close()
+			io.Copy(io.Discard, reader)
+		} else if err != nil {
+			return "", fmt.Errorf("inspect image failed: %v", err)
+		}
+
+		// 2. 配置容器
+		repoAbsPath, _ := filepath.Abs(t.Def.RepoPath)
+
+		// 修正 Command: finalCmd 是替換過變數的完整指令字串 (e.g. "python main.py arg1")
+		// Docker Cmd 預期是 []string。我們用 sh -c 來執行複雜指令
+		cmdSlice := []string{"sh", "-c", finalCmd}
+
+		containerConfig := &container.Config{
+			Image:           t.Def.Image,
+			Cmd:             cmdSlice,
+			NetworkDisabled: false, // 允許聯網
+			WorkingDir:      "/app",
+		}
+
+		hostConfig := &container.HostConfig{
+			Binds: []string{
+				fmt.Sprintf("%s:/app:ro", repoAbsPath), // 掛載 RepoPath 到 /app (Read-Only)
+			},
+			AutoRemove: false,                                          // 必須設為 false，否則執行完瞬間就被刪除，讀不到 logs
+			Resources:  container.Resources{Memory: 256 * 1024 * 1024}, // 256MB
+		}
+
+		// 3. 建立並啟動
+		resp, err := t.DockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+		if err != nil {
+			return "", fmt.Errorf("container create failed: %v", err)
+		}
+
+		// 確保清理
+		defer func() {
+			_ = t.DockerClient.ContainerRemove(context.Background(), resp.ID, types.ContainerRemoveOptions{Force: true})
+		}()
+
+		if err := t.DockerClient.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+			return "", fmt.Errorf("container start failed: %v", err)
+		}
+
+		// 4. 等待結果
+		statusCh, errCh := t.DockerClient.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+		select {
+		case err := <-errCh:
+			executionErr = fmt.Errorf("container error: %v", err)
+		case <-statusCh:
+			// Success, read logs
+		case <-time.After(60 * time.Second): // Timeout
+			_ = t.DockerClient.ContainerKill(ctx, resp.ID, "SIGKILL")
+			executionErr = fmt.Errorf("timeout")
+		}
+
+		// 5. 讀取 Logs
+		if executionErr == nil || executionErr.Error() == "timeout" {
+			out, err := t.DockerClient.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+			if err == nil {
+				defer out.Close()
+				var stdout, stderr bytes.Buffer
+				// 使用 stdcopy 區分 stdout/stderr
+				stdcopy.StdCopy(&stdout, &stderr, out)
+
+				resOut := stdout.String()
+				resErr := stderr.String()
+
+				if resErr != "" {
+					result = fmt.Sprintf("%s\n(Stderr: %s)", resOut, resErr)
+				} else {
+					result = resOut
+				}
+			}
 		}
 	}
 
 	// 4. 背景執行 (Fallback to Shell)
-	// 如果尚未透過內部工具處理，且沒有錯誤，則嘗試 Shell
-	if result == "" && executionErr == nil {
+	if result == "" && executionErr == nil && !useDocker {
 		// 使用開頭的字作為執行檔，後面的作為參數
 		// 注意：這裡直接執行可能會有安全風險
-
-		// 為了支援非同步回傳，這裡改為同步執行並等待結果，才能寫入快取
-		// 如果需要背景執行且不等待，則無法支援快取 (除非是異步回調模式)
-		// 但目前的 Tool 介面要求回傳字串，所以我們假設 Tool 執行是同步的
-
 		cmd := exec.Command("cmd", "/C", finalCmd)
 		out, err := cmd.CombinedOutput()
 		output := string(out)
 		if err != nil {
 			output += fmt.Sprintf("\nErrors: %v", err)
-			executionErr = err // 標記錯誤
+			executionErr = err
 		}
 		result = output
 	}

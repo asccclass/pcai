@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCAI - Personalized Contextual AI</title>
+    <meta name="description"
+        content="PCAI is a powerful command-line AI assistant integrating Ollama, RAG long-term memory, and tool calling for developers.">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #e2e8f0;
+            --primary-color: #38bdf8;
+            --secondary-color: #818cf8;
+            --accent-color: #2dd4bf;
+            --surface-color: #1e293b;
+            --border-color: #334155;
+            --code-bg: #020617;
+            --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        a:hover {
+            color: var(--accent-color);
+        }
+
+        /* Utility Classes */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: #fff;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .btn-outline {
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-color);
+        }
+
+        .btn-outline:hover {
+            background: var(--surface-color);
+            border-color: var(--primary-color);
+        }
+
+        /* Header */
+        header {
+            padding: 1.5rem 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 100;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            background: linear-gradient(to right, var(--primary-color), var(--accent-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.05em;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .nav-links a {
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .nav-links a:hover {
+            color: var(--primary-color);
+        }
+
+        /* Hero Section */
+        #hero {
+            padding: 10rem 0 6rem;
+            text-align: center;
+            position: relative;
+        }
+
+        #hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, rgba(15, 23, 42, 0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .hero-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: #94a3b8;
+            max-width: 700px;
+            margin: 0 auto 3rem;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        /* Features Section */
+        #features {
+            padding: 6rem 0;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: #fff;
+        }
+
+        .section-desc {
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 4rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            padding: 2rem;
+            border-radius: 1rem;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary-color);
+            box-shadow: 0 10px 30px -10px rgba(56, 189, 248, 0.1);
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            display: inline-block;
+            padding: 1rem;
+            background: rgba(56, 189, 248, 0.1);
+            border-radius: 0.75rem;
+            color: var(--primary-color);
+        }
+
+        .feature-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: #fff;
+        }
+
+        .feature-text {
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+
+        /* Terminal Demo */
+        #terminal-section {
+            padding: 4rem 0 6rem;
+        }
+
+        .terminal-window {
+            background: var(--code-bg);
+            border-radius: 1rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            font-family: var(--font-mono);
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .terminal-header {
+            background: var(--surface-color);
+            padding: 0.75rem 1rem;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .terminal-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .t-btn {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .t-close {
+            background: #ef4444;
+        }
+
+        .t-min {
+            background: #f59e0b;
+        }
+
+        .t-max {
+            background: #22c55e;
+        }
+
+        .terminal-title {
+            margin-left: 1rem;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+
+        .terminal-body {
+            padding: 1.5rem;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+        }
+
+        .cmd {
+            color: var(--accent-color);
+        }
+
+        .prompt {
+            color: var(--secondary-color);
+            margin-right: 0.5rem;
+        }
+
+        .output {
+            color: #94a3b8;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .highlight {
+            color: var(--primary-color);
+        }
+
+        /* Installation */
+        #install {
+            padding: 6rem 0;
+            background: rgba(30, 41, 59, 0.3);
+        }
+
+        .install-steps {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .step {
+            margin-bottom: 3rem;
+        }
+
+        .step-title {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .step-number {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 1rem;
+            color: var(--primary-color);
+        }
+
+        .code-block {
+            background: var(--code-bg);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            border: 1px solid var(--border-color);
+            font-family: var(--font-mono);
+            position: relative;
+            overflow-x: auto;
+        }
+
+        .code-block code {
+            color: #e2e8f0;
+        }
+
+        .code-comment {
+            color: #64748b;
+        }
+
+        /* Footer */
+        footer {
+            padding: 4rem 0;
+            border-top: 1px solid var(--border-color);
+            margin-top: 4rem;
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 2.5rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <nav>
+                <div class="logo">
+                    <img src="images/jiichat_logo.png" height="36">
+                    <a href="pcai.html">PCAI</a>
+                </div>
+                <div class="nav-links">
+                    <a href="#features">功能特色</a>
+                    <a href="#install">快速開始</a>
+                    <a href="policy.html" target=_blank>隱私權政策</a>
+                    <a href="https://github.com/asccclass/pcai" target="_blank">GitHub</a>
+                </div>
+                <a href="#install" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.9rem;">開始使用</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section id="hero">
+        <div class="container">
+            <h1 class="hero-title">Personalized Contextual AI<br><span
+                    style="color: var(--primary-color); font-size: 0.6em; display: block; margin-top: 10px; font-weight: 600;">你的本地
+                    AI 程式開發助手</span></h1>
+            <p class="hero-subtitle">整合 Ollama 本地模型、RAG 長期記憶與強大的工具呼叫功能。專為開發者設計，讓 AI 直接與你的開發環境深度互動。</p>
+            <div class="hero-actions">
+                <a href="#install" class="btn btn-primary">立即安裝</a>
+                <a href="#features" class="btn btn-outline">了解更多</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Terminal Demo -->
+    <section id="terminal-section">
+        <div class="container">
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <div class="terminal-buttons">
+                        <div class="t-btn t-close"></div>
+                        <div class="t-btn t-min"></div>
+                        <div class="t-btn t-max"></div>
+                    </div>
+                    <div class="terminal-title">pcai-cli — bash — 80x24</div>
+                </div>
+                <div class="terminal-body">
+                    <div><span class="prompt">➜</span> <span class="cmd">./pcai.exe chat -m llama3</span></div>
+                    <span class="output">Welcome to PCAI! Local Knowledge Loaded. <span class="highlight">Using Model:
+                            llama3</span></span>
+                    <br>
+                    <div><span class="prompt">User:</span> <span class="cmd">幫我把 assets 資料夾裡的影片轉成 mp4</span></div>
+                    <br>
+                    <div><span class="prompt">PCAI:</span> <span class="cmd">沒問題，我將使用 `convert_videos` 工具來處理。</span>
+                    </div>
+                    <span class="output">[TOOL CALL] convert_videos(input="assets", format="mp4")</span>
+                    <span class="output">Converting video1.mov -> video1.mp4 ... [Done]</span>
+                    <span class="output">Converting video2.avi -> video2.mp4 ... [Done]</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features">
+        <div class="container">
+            <h2 class="section-title">核心功能</h2>
+            <p class="section-desc">PCAI 不僅僅是一個聊天機器人，它是能理解上下文並執行任務的強大代理人。</p>
+
+            <div class="features-grid">
+                <!-- Feature 1 -->
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3 class="feature-title">本地模型整合</h3>
+                    <p class="feature-text">透過 Ollama 執行 Llama 3, Mistral 等開源模型，無需將數據傳送至雲端，確保隱私與速度。</p>
+                </div>
+
+                <!-- Feature 2 -->
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3 class="feature-title">RAG 長期記憶</h3>
+                    <p class="feature-text">具備自動記憶功能，將對話歸納為知識庫。AI 能隨時回憶起過去的專案細節與討論內容。</p>
+                </div>
+
+                <!-- Feature 3 -->
+                <div class="feature-card">
+                    <div class="feature-icon">🛠️</div>
+                    <h3 class="feature-title">強大工具呼叫</h3>
+                    <p class="feature-text">內建 Shell 指令執行、網頁爬蟲、檔案管理等工具，讓 AI 成為真正的生產力助手。</p>
+                </div>
+
+                <!-- Feature 4 -->
+                <div class="feature-card">
+                    <div class="feature-icon">💬</div>
+                    <h3 class="feature-title">Signal & Gmail 整合</h3>
+                    <p class="feature-text">隨時透過 Signal App 與你的 AI 對話，或讓它自動摘要重要的 Gmail 郵件。</p>
+                </div>
+
+                <!-- Feature 5 -->
+                <div class="feature-card">
+                    <div class="feature-icon">🎥</div>
+                    <h3 class="feature-title">多媒體處理</h3>
+                    <p class="feature-text">支援批量影片轉檔、PDF 匯出對話紀錄，自動適配系統資源進行高效處理。</p>
+                </div>
+
+                <!-- Feature 6 -->
+                <div class="feature-card">
+                    <div class="feature-icon">💻</div>
+                    <h3 class="feature-title">跨平台支援</h3>
+                    <p class="feature-text">完美支援 Windows, macOS 與 Linux (含 ARM64)，一次編寫，到處執行。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section id="install">
+        <div class="container">
+            <h2 class="section-title">快速開始</h2>
+            <p class="section-desc">只需幾分鐘，即可在你的電腦上部署 PCAI。</p>
+
+            <div class="install-steps">
+                <!-- Step 1 -->
+                <div class="step">
+                    <div class="step-title">
+                        <div class="step-number">1</div>
+                        <span>下載並編譯專案</span>
+                    </div>
+                    <div class="code-block">
+                        <code>
+<span class="code-comment"># 下載專案</span>
+git clone https://github.com/asccclass/pcai.git
+cd pcai
+
+<span class="code-comment"># Windows 編譯</span>
+make build-win
+
+<span class="code-comment"># Linux / macOS 編譯</span>
+make build
+                        </code>
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="step">
+                    <div class="step-title">
+                        <div class="step-number">2</div>
+                        <span>啟動 PCAI</span>
+                    </div>
+                    <div class="code-block">
+                        <code>
+<span class="code-comment"># 啟動對話模式</span>
+./pcai.exe chat
+
+<span class="code-comment"># 指定模型 (需先安裝 Ollama)</span>
+./pcai.exe chat -m llama3
+                        </code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <p>
+                    &copy; 2026 PCAI Project. All rights reserved. |
+                    <a href="policy.html" target=_blank>隱私權政策</a>
+                </p>
+                <div class="footer-links">
+                    <a href="https://github.com/asccclass/pcai" target="_blank">GitHub Repository</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+    <script defer
+        src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015"
+        integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ=="
+        data-cf-beacon='{"version":"2024.11.0","token":"a466dd9fb3f144898aafe83bf74cc7a4","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}'
+        crossorigin="anonymous"></script>
+</body>
+
+</html>

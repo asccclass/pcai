@@ -19,6 +19,7 @@ import (
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/scheduler"
 	"github.com/asccclass/pcai/skills"
+	dclient "github.com/docker/docker/client"
 	"github.com/ollama/ollama/api"
 )
 
@@ -217,13 +218,20 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(advisorSkill.CreateTool())
 
 	// [NEW] 載入動態技能 (skills.md)
+	// 初始化 Docker Client (分享給所有 Dynamic Skills)
+	dockerCli, err := dclient.NewClientWithOpts(dclient.FromEnv, dclient.WithAPIVersionNegotiation())
+	if err != nil {
+		log.Printf("⚠️ [Skills] 無法初始化 Docker Client: %v (Sidecar 模式將無法使用)", err)
+		dockerCli = nil
+	}
+
 	skillsDir := filepath.Join(home, "skills")
 	dynamicSkills, err := skills.LoadSkills(skillsDir)
 	if err != nil {
 		log.Printf("⚠️ [Skills] 無法載入 skills.md: %v", err)
 	} else {
 		for _, ds := range dynamicSkills {
-			toolStr := skills.NewDynamicTool(ds, registry)
+			toolStr := skills.NewDynamicTool(ds, registry, dockerCli)
 			registry.Register(toolStr)
 			fmt.Printf("✅ [Skills] 已註冊動態技能: %s\n", toolStr.Name())
 		}
@@ -231,6 +239,13 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 
 	// 新增 Skill 腳手架建立工具 (Meta-Tool)
 	registry.Register(&CreateSkillTool{})
+
+	// [NEW] 註冊 GitHub Skill Installer
+	registry.Register(&SkillInstaller{
+		Registry:     registry,
+		BaseDir:      skillsDir,
+		DockerClient: dockerCli,
+	})
 
 	// --- 新增：Telegram 整合 ---
 	// [FIX] 移動到這裡，確保 registry 已經註冊完所有工具
