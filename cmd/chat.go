@@ -52,10 +52,12 @@ func runChat(cmd *cobra.Command, args []string) {
 	bgMgr := tools.NewBackgroundManager()
 	GlobalBgMgr = bgMgr // 將實例交給全域指標，讓 health 指令讀得到
 	// 初始化工具
-	registry := tools.InitRegistry(bgMgr, cfg, func() {
+	// 初始化工具
+	registry, cleanup := tools.InitRegistry(bgMgr, cfg, func() {
 		// 當非同步任務(如Telegram)完成且有輸出時，補印提示符
 		fmt.Print("\n" + promptStr)
 	})
+	defer cleanup() // 程式結束時執行清理 (停止 Telegram)
 
 	// 載入 Session 與 RAG 增強
 	sess := history.LoadLatestSession()

@@ -1,16 +1,13 @@
 package channel
 
 import (
-	"context" // Added context
+	"context"
 	"fmt"
 	"log"
 	"os"
 
-	"time"
-
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
-	"github.com/valyala/fasthttp"
 )
 
 // Envelope 封裝了跨平台的統一訊息格式
@@ -26,20 +23,19 @@ type Envelope struct {
 
 // TelegramChannel 實作了適配器結構
 type TelegramChannel struct {
-	bot *telego.Bot
+	bot         *telego.Bot
+	stopPolling context.CancelFunc
 }
 
 // NewTelegramChannel 初始化機器人
-func NewTelegramChannel(token string) (*TelegramChannel, error) {
-	// 建立自定義的 FastHTTP 客戶端，設定較長的超時時間
-	// 這是為了配合長輪詢 (Long Polling)
-	client := &fasthttp.Client{
-		ReadTimeout:  70 * time.Second, // 比長輪詢的 60 秒稍長
-		WriteTimeout: 70 * time.Second,
+func NewTelegramChannel(token string, debug bool) (*TelegramChannel, error) {
+	// 使用預設設定初始化 Bot
+	options := []telego.BotOption{}
+	if debug {
+		options = append(options, telego.WithDefaultDebugLogger())
 	}
 
-	// 使用自定義的 HTTP 客戶端初始化 Bot
-	bot, err := telego.NewBot(token, telego.WithFastHTTPClient(client))
+	bot, err := telego.NewBot(token, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -47,19 +43,19 @@ func NewTelegramChannel(token string) (*TelegramChannel, error) {
 }
 
 // Listen 啟動長輪詢 (Long Polling) 監聽訊息
-// 當收到訊息時，會封裝成 Envelope 並丟給傳入的 handler 處理
 func (t *TelegramChannel) Listen(handler func(Envelope)) {
+	// 建立可取消的 Context
+	ctx, cancel := context.WithCancel(context.Background())
+	t.stopPolling = cancel
+
 	// 設定長輪詢參數
-	// Timeout 設定為 60 秒，告訴 Telegram 伺服器若無新訊息則保持連線 60 秒
-	updates, err := t.bot.UpdatesViaLongPolling(context.Background(), &telego.GetUpdatesParams{
+	updates, err := t.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
 		Timeout: 60,
 	})
 	if err != nil {
 		log.Fatalf("⚠️ [Telegram] 無法啟動長輪詢: %v", err)
 		os.Exit(1)
 	}
-
-	// defer t.bot.StopLongPolling() // Removed as it is undefined
 
 	fmt.Println("✅ [Telegram] 頻道已啟動，監聽中...")
 
@@ -94,5 +90,14 @@ func (t *TelegramChannel) Listen(handler func(Envelope)) {
 			// 將封裝好的訊息丟給 Dispatcher 層處理
 			go handler(env)
 		}
+	}
+	fmt.Println("🛑 [Telegram] 長輪詢已結束")
+}
+
+// Stop 停止長輪詢
+func (t *TelegramChannel) Stop() {
+	if t.stopPolling != nil {
+		fmt.Println("🛑 [Telegram] 正在停止頻道...")
+		t.stopPolling()
 	}
 }

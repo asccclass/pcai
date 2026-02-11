@@ -55,20 +55,26 @@ type PCAIBrain struct {
 	dispatcher  *notify.Dispatcher
 	modelName   string
 	tools       ToolExecutor // 加入工具執行器
+	tgToken     string
+	tgChatID    string
 }
 
 func (b *PCAIBrain) SetTools(executor ToolExecutor) {
 	b.tools = executor
 }
 
-func NewPCAIBrain(db *database.DB, ollamaURL, modelName string) *PCAIBrain {
-	return &PCAIBrain{
+func NewPCAIBrain(db *database.DB, ollamaURL, modelName, tgToken, tgChatID string) *PCAIBrain {
+	brain := &PCAIBrain{
 		DB:          db,
 		httpClient:  resty.New().SetTimeout(100 * time.Second).SetRetryCount(2),
 		ollamaURL:   ollamaURL,
 		modelName:   modelName,
 		filterSkill: skills.NewFilterSkill(db),
+		tgToken:     tgToken,
+		tgChatID:    tgChatID,
 	}
+	brain.SetupDispatcher()
+	return brain
 }
 
 func (b *PCAIBrain) getTrustList() map[string]ContactInfo {
@@ -192,7 +198,7 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 {"decision": "...", "reason": "...", "score": 85}
 `, snapshot)
 
-	fmt.Printf("[Brain] 正在思考決策...\n")
+	fmt.Printf("[Brain] 正在思考決策... \n內容:\n%s\n", snapshot)
 
 	// 真正呼叫 Ollama (複用之前的 HTTP 請求結構)
 	var result struct {
@@ -297,7 +303,7 @@ func (b *PCAIBrain) HandleUserChat(ctx context.Context, sessionID string, userIn
 		fmt.Printf("[Agent] 嘗試使用工具: %s, 參數: %s\n", toolName, toolArgs)
 
 		if b.tools == nil {
-			return "抱歉，我現在無法使用工具（工具庫未初始化）。", nil
+			return "⚠️ 抱歉，我現在無法使用工具（工具庫未初始化）。", nil
 		}
 
 		// 執行工具
@@ -325,11 +331,13 @@ func (b *PCAIBrain) SetupDispatcher() {
 	commonClient := resty.New() // 複用同一個 HTTP Client
 
 	// 1. 註冊 Telegram
-	dispatcher.Register(&notify.TelegramNotifier{
-		Token:  "8467211970:AAEdbk6V7928cBMr-3yde6fYS2vU5_YplM8",
-		ChatID: "7736461491",
-		Client: commonClient,
-	})
+	if b.tgToken != "" && b.tgChatID != "" {
+		dispatcher.Register(&notify.TelegramNotifier{
+			Token:  b.tgToken,
+			ChatID: b.tgChatID,
+			Client: commonClient,
+		})
+	}
 
 	// 2. 註冊 LINE
 	dispatcher.Register(&notify.LineNotifier{

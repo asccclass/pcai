@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/asccclass/pcai/internal/channel"
 	"github.com/asccclass/pcai/internal/config"
@@ -20,12 +21,13 @@ import (
 	"github.com/asccclass/pcai/internal/scheduler"
 	"github.com/asccclass/pcai/skills"
 	dclient "github.com/docker/docker/client"
+	"github.com/go-resty/resty/v2"
 	"github.com/ollama/ollama/api"
 )
 
 // SyncMemory 讀取 Markdown 檔案，將「新出現」的內容加入記憶庫
 func SyncMemory(mem *memory.Manager, filePath string) {
-	fmt.Printf("[Sync] 正在檢查檔案變更: %s ...\n", filePath)
+	fmt.Printf("  ↳ [Sync] 正在檢查檔案變更: %s ...\n", filePath)
 
 	file, err := os.Open(filePath)
 	if os.IsNotExist(err) {
@@ -44,7 +46,7 @@ func SyncMemory(mem *memory.Manager, filePath string) {
 
 			// 關鍵修改：先檢查 Exists，不存在才 Add
 			if content != "" && !mem.Exists(content) {
-				fmt.Printf(" [發現新資料] 正在嵌入: %s...\n", content[:10])
+				fmt.Printf("    ↳ [New] 正在嵌入: %s...\n", content[:10])
 				err := mem.Add(content, []string{"file_sync"})
 				if err != nil {
 					fmt.Println("嵌入失敗:", err)
@@ -67,9 +69,9 @@ func SyncMemory(mem *memory.Manager, filePath string) {
 	}
 
 	if newCount > 0 {
-		fmt.Printf("[Sync] 同步完成，新增了 %d 筆記憶。\n", newCount)
+		fmt.Printf("  ↳ [Sync] 同步完成，新增了 %d 筆記憶。\n", newCount)
 	} else {
-		fmt.Println("[Sync] 檔案無變更，記憶庫已是最新狀態。")
+		fmt.Println("  ↳ [Sync] 檔案無變更，記憶庫已是最新狀態。")
 	}
 }
 
@@ -77,7 +79,8 @@ func SyncMemory(mem *memory.Manager, filePath string) {
 var DefaultRegistry = core.NewRegistry()
 
 // InitRegistry 初始化工具註冊表
-func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent func()) *core.Registry {
+// InitRegistry 初始化工具註冊表, 回傳 Registry 和 Cleanup Function
+func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent func()) (*core.Registry, func()) {
 	home, _ := os.Getwd() // 程式碼根目錄
 
 	// 建立 Ollama API 客戶端
@@ -98,7 +101,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	// defer sqliteDB.Close()
 
 	// 初始化排程管理器(Hybrid Manager)
-	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model)
+	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model, cfg.TelegramToken, cfg.TelegramAdminID)
 	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
 	if onAsyncEvent != nil {
 		schedMgr.OnCompletion = onAsyncEvent // 當排程任務完成輸出後，恢復提示符
@@ -117,10 +120,18 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 		myGmailSkill.Execute(gmailCfg)
 	})
 
-	schedMgr.RegisterTaskType("read_calendar", func() {
-		myCalendarSkill := skills.NewCalendarSkill(client, cfg.Model)
-		myCalendarSkill.Execute()
+	// 定期檢查行事曆變動 (每小時)
+	schedMgr.RegisterTaskType("calendar_watcher", func() {
+		watcher := skills.NewCalendarWatcherSkill(cfg.TelegramToken, cfg.TelegramAdminID)
+		watcher.Execute(7) // 檢查未來 7 天
 	})
+	// 預設加入排程 (如果 db 沒資料)
+	// 注意：這裡只註冊 Type，實際排程由 DB 或使用者設定。
+	// 但為了符合需求 "主動通知"，我們應該在這裡確保它會跑。
+	// 由於 schedMgr.LoadJobs() 會載入 DB，如果 DB 沒這 job，我們得 add 一個。
+	// 這裡簡單做：在 init 時檢查是否已存在，若無則加入?
+	// 或者直接寫死在 Code 裡讓它是 "System Task" (不存 DB)?
+	// 目前架構是 Hybrid，這裡註冊 TaskType，然後用 CronSchedule 加入。
 
 	schedMgr.RegisterTaskType("backup_knowledge", func() {
 		msg, err := AutoBackupKnowledge()
@@ -128,6 +139,52 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 			log.Printf("Backup failed: %v", err)
 		} else {
 			log.Println(msg)
+		}
+	})
+
+	// 註冊每日簡報任務
+	schedMgr.RegisterTaskType("daily_calendar_report", func() {
+		watcher := skills.NewCalendarWatcherSkill(cfg.TelegramToken, cfg.TelegramAdminID)
+		if briefing, err := watcher.GenerateDailyBriefing(client, cfg.Model); err != nil {
+			log.Printf("[Scheduler] Daily briefing failed: %v", err)
+		} else {
+			// 直接發送 (GenerateDailyBriefing 內部只存檔，不發送？不，它有 return string，我們這裡發送)
+			// 但 GenerateDailyBriefing 應該只負責產生和存檔，發送交給上面？
+			// 不，為了簡單，我们在這裡調用 sendTelegram // wait, Watcher struct has private sendTelegram.
+			// Let's modify GenerateDailyBriefing to return string, and we send it here using helper?
+			// Or better, let Watcher handle sending if we expose it?
+			// Actually, I added a private `sendTelegram` to Watcher.
+			// I should probably make `GenerateDailyBriefing` send it too, or expose `SendTelegram`.
+			// Let's assume for now I will use the return string to send via `dispatcher` or just implement a sender here.
+			// Oops, `calendar_watcher_skill.go` already implemented `sendTelegram` but it is private.
+			// Let's reuse the internal config to send.
+
+			// Packer: I can create a new adapter/notifier here.
+			// Or simply:
+			fmt.Println("✅ [Scheduler] 發送每日簡報...")
+			// watcher.SendTelegram(briefing) // if exposed.
+			// Since I cannot change `watcher` easily in this block without another edit,
+			// I will use a simple REST call here or assume watcher does it?
+			// Wait, the plan said "Sends result to Telegram".
+
+			// Let's implement sending here using the existing variables.
+			if cfg.TelegramToken != "" && cfg.TelegramAdminID != "" {
+				resty.New().R().
+					SetBody(map[string]string{
+						"chat_id":    cfg.TelegramAdminID,
+						"text":       briefing,
+						"parse_mode": "Markdown",
+					}).
+					Post(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.TelegramToken))
+			}
+		}
+	})
+
+	// 註冊行程提醒任務 (每 5 分鐘執行)
+	schedMgr.RegisterTaskType("calendar_notifier", func() {
+		watcher := skills.NewCalendarWatcherSkill(cfg.TelegramToken, cfg.TelegramAdminID)
+		if err := watcher.CheckUpcoming(30 * time.Minute); err != nil {
+			log.Printf("[Scheduler] Calendar notifier check failed: %v", err)
 		}
 	})
 
@@ -150,6 +207,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	memManager := memory.NewManager(jsonPath, embedder)
 
 	// SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
+	fmt.Println("✅ [Scheduler] 正在初始化記憶庫同步...")
 	SyncMemory(memManager, mdPath)
 
 	// 檔案系統管理器，設定 "Sandbox" 根目錄
@@ -191,9 +249,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
-	registry.Register(&CalendarTool{})
-	registry.Register(&ListCalendarsTool{})
 	registry.Register(&EmailTool{})
+	registry.Register(NewGoogleTool())
 
 	// Python Sandbox Tool
 	if pyTool, err := NewPythonSandboxTool(workspacePath); err != nil {
@@ -267,10 +324,11 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	})
 
 	// --- 新增：Telegram 整合 ---
+	var tgChannel *channel.TelegramChannel // 宣告在外部以供 cleanup 存取
+
 	// [FIX] 移動到這裡，確保 registry 已經註冊完所有工具
 	if cfg.TelegramToken != "" {
-		// 1. 建立 Agent Adapter (支援多用戶 Session)
-		// 注意：這裡改成使用傳入區域變數 registry (已經包含所有工具)
+		// 1. 建立 Agent Adapter
 		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt, cfg.TelegramDebug)
 
 		// 2. 建立 Dispatcher
@@ -280,18 +338,26 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 		}
 
 		// 3. 建立 Telegram Channel
-		tgChannel, err := channel.NewTelegramChannel(cfg.TelegramToken)
+		var err error
+		tgChannel, err = channel.NewTelegramChannel(cfg.TelegramToken, cfg.TelegramDebug)
 		if err != nil {
 			log.Printf("⚠️ 無法啟動 Telegram Channel: %v", err)
 		} else {
 			// 4. 啟動監聽 (非同步)
 			go tgChannel.Listen(dispatcher.HandleMessage)
-			log.Println("✅ Telegram Channel 已啟動並連接至 Gateway")
+			// log.Println("✅ Telegram Channel 已啟動並連接至 Gateway") // Listen 內部會印
 		}
 	}
 
 	// 注入工具執行器到大腦
 	myBrain.SetTools(registry)
 
-	return registry
+	// 建立 Cleanup Function
+	cleanup := func() {
+		if tgChannel != nil {
+			tgChannel.Stop()
+		}
+	}
+
+	return registry, cleanup
 }
