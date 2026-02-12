@@ -15,7 +15,6 @@ import (
 	"github.com/asccclass/pcai/internal/core"
 	"github.com/asccclass/pcai/internal/database"
 	"github.com/asccclass/pcai/internal/gateway"
-	"github.com/asccclass/pcai/internal/gmail"
 	"github.com/asccclass/pcai/internal/heartbeat"
 	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/internal/memory"
@@ -110,17 +109,6 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	}
 
 	// 註冊 Cron 類型的任務 (週期性), 這裡定義 LLM 可以觸發的背景動作
-	schedMgr.RegisterTaskType("read_email", func() {
-		gmailCfg := gmail.FilterConfig{
-			AllowedSenders: []string{"edu.tw", "service", "justgps", "andyliu"},
-			KeyPhrases:     []string{"通知", "重要", "會議"},
-			MaxResults:     5,
-		}
-		// 重構後：使用 Skill 層的 Adapter
-
-		myGmailSkill := skills.NewGmailSkill(client, cfg.Model, cfg.TelegramToken, cfg.TelegramAdminID)
-		myGmailSkill.Execute(gmailCfg)
-	})
 
 	// 定期檢查行事曆變動 (每小時)
 	schedMgr.RegisterTaskType("calendar_watcher", func() {
@@ -284,7 +272,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	// 基礎工具
 	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
 	registry.Register(&KnowledgeSearchTool{})
-	registry.Register(&FetchURLTool{})
+	registry.Register(&WebFetchTool{})
 	registry.Register(&WebSearchTool{})
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
