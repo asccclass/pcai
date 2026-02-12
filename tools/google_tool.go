@@ -17,18 +17,50 @@ type GoogleTool struct {
 
 func NewGoogleTool() *GoogleTool {
 	// 預設找當前目錄下的 bin/gog.exe 或 gog
-	// 也可以從環境變數 GOG_BIN 讀取
+	// 若找不到，則嘗試從系統 PATH 尋找
 	binName := "gog"
 	if runtime.GOOS == "windows" {
 		binName = "gog.exe"
 	}
 
-	// 假設 bin 在工作目錄的 bin/ 下
+	// 1. Check local bin/
 	cwd, _ := os.Getwd()
-	binPath := filepath.Join(cwd, "bin", binName)
+
+	possiblePaths := []string{
+		filepath.Join(cwd, "bin", binName),
+	}
+
+	// 嘗試從環境變數 USERPROFILE 組合路徑
+	if home := os.Getenv("USERPROFILE"); home != "" {
+		possiblePaths = append(possiblePaths, filepath.Join(home, "go", "bin", binName))
+	}
+	// 嘗試 GOPATH
+	if goPath := os.Getenv("GOPATH"); goPath != "" {
+		possiblePaths = append(possiblePaths, filepath.Join(goPath, "bin", binName))
+	}
+
+	var finalPath string
+	found := false
+	for _, p := range possiblePaths {
+		if _, err := os.Stat(p); err == nil {
+			finalPath = p
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// 2. Try to find in PATH
+		if path, err := exec.LookPath(binName); err == nil {
+			finalPath = path
+		} else {
+			// Fallback: just use the name and hope for the best at runtime
+			finalPath = binName
+		}
+	}
 
 	return &GoogleTool{
-		BinPath: binPath,
+		BinPath: finalPath,
 	}
 }
 
