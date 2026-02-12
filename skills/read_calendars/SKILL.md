@@ -1,54 +1,62 @@
 ---
-name: fetch-all-calendars
-description: 取得使用者所有 Google 行事曆分類的詳細活動內容 (包含私人、工作及訂閱的行事曆)
+name: read_calendars
+description: Read and list user's calendar events from Google Calendar using the gog tool.
 metadata:
-  author: User
-  version: 1.0
-  requirements:
-    - bin/gog
+  pcai:
+    requires:
+      bins: ["gog"]
 ---
 
-# Fetch All Calendars Skill
+# Calendar Reader Skill
 
-這個 Skill 用於讀取使用者所有的 Google 行事曆資料。
-它會先列出所有可用的行事曆 ID，然後針對每一個 ID 抓取指定時間範圍內的活動。
+此技能允許 Agent 透過 `gog` CLI 工具讀取使用者的 Google 行事曆。
 
-## 使用方法 (Usage)
+## Capabilities
 
-當使用者詢問「取得我所有行事曆的行程」或「檢查我所有行事曆」時，請執行以下步驟。
+1.  **List Events**: 列出特定時間範圍內的行事曆活動。
+2.  **Flexible Date Ranges**: 支援「今天」、「本週」、「下週」或特定日期的查詢。
 
-### 執行邏輯
+## Instructions for the Agent
 
-請使用 `bash` 執行以下腳本。這個腳本會自動處理 ID 的列表與遍歷。
+當使用者要求讀取行事曆時，請遵循以下步驟：
 
-```bash
-#!/bin/bash
+1.  **解析時間範圍**：
+    - 根據使用者的自然語言（例如「本週」、「今天」、「因為下禮拜要...」）計算出 `Start Date` 和 `End Date`。
+    - 格式必須為 `YYYY-MM-DD`。
+    - 常用對照：
+        - **今天**: `Start` = Today, `End` = Today (or Today+1 for full coverage)
+        - **本週**: `Start` = Today (or Monday/Sunday of this week), `End` = End of this week (Sunday/Saturday)
+        - **未來 7 天**: `Start` = Today, `End` = Today + 7 days
+    - 如果使用者未指定，預設查詢 **未來 7 天**。
 
-# 1. 設定時間範圍 (預設未來 30 天，可根據需求調整)
-START_DATE=$(date +%Y-%m-%d)
-END_DATE=$(date -d "+7 days" +%Y-%m-%d)
+2.  **執行查詢**：
+    - 使用指令 `gog calendar events --all --from <START_DATE> --to <END_DATE> --json`。
+    - `--all` 參數確保讀取所有行事曆（包含訂閱的）。
+    - 務必使用 `--json` 以便程式解析，但在摘要給使用者時請轉換為自然語言。
 
-echo "正在取得行事曆列表..."
+3.  **摘要內容**：
+    - 收到 JSON 回應後，請整理並列出重點行程。
+    - 包含：時間 (Start Time)、活動名稱 (Summary)、地點 (Location, if any)。
+    - 如果沒有活動，請明確告知使用者「這段時間沒有行程」。
 
-# 2. 取得所有行事曆列表 (JSON 格式)
-# 使用 jq 解析出 id 欄位 (假設 gog 回傳標準 JSON)
-CAL_IDS=$(bin/gog calendar list --json | grep -o '"id": *"[^"]*"' | cut -d'"' -f4)
+## Examples
 
-# 如果沒有 jq 或無法解析，這是備案：讓 Agent 根據實際輸出調整解析方式
-if [ -z "$CAL_IDS" ]; then
-    echo "無法自動解析 ID，嘗試直接顯示列表："
-    gog calendar list
-    exit 1
-fi
+User: "看看我這禮拜有什麼行程"
+(假設今天是 2026-02-12 星期四)
+Agent Action:
+1. Identify intent: Read calendar.
+2. Calculate dates: "This week" -> From 2026-02-12 (Today) to 2026-02-15 (Sunday) OR 2026-02-14 (Saturday). Let's use Today to Sunday.
+3. run `gog calendar events --all --from 2026-02-12 --to 2026-02-15 --json`
 
-echo "找到以下行事曆，開始讀取詳細內容..."
-echo "$CAL_IDS"
+User: "檢查明天的行事曆"
+(假設今天是 2026-02-12)
+Agent Action:
+1. Identify intent: Read calendar for tomorrow.
+2. Calculate dates: Tomorrow is 2026-02-13.
+3. run `gog calendar events --all --from 2026-02-13 --to 2026-02-13 --json` (Note: gog might require end date to be inclusive or +1 day depending on implementation, usually same day works for 'events on that day', or safely use +1 day 2026-02-14 to cover full 24h)
+   *Code Hint*: `gog` 的 `--to` 通常是 inclusive 或者截止點。為了保險，查詢單日建議 `to` 設為同一天或隔天。
 
-# 3. 遍歷每個 ID 讀取事件
-for id in $CAL_IDS; do
-    echo "--------------------------------------------------"
-    echo "正在讀取行事曆: $id"
-    # 呼叫 gog 讀取該 ID 的事件
-    # 注意：參數可能需要根據實際 gog 版本微調 (例如 --calendar 或 --id)
-    bin/gog calendar events --calendar "$id" --from "$START_DATE" --to "$END_DATE" --json
-done
+User: "取得所有行事曆"
+Agent Action:
+1. Default to next 7 days or ask clarification.
+2. run `gog calendar events --all --from <TODAY> --to <TODAY+7> --json`

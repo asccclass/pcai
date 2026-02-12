@@ -81,7 +81,7 @@ option_aliases:
 從 Google Sheets 資料庫中查詢台灣各縣市指定地區的**目前時段及未來天氣預報**。系統會自動過濾掉已過期的時段。
 
 ## 參數描述
-- `location`: (string, required) 台灣的地區名稱。必須是合法行政區名稱 (如：臺北市、高雄市)。系統會自動校正些微的輸入錯誤。
+- `location`: (string, required) 台灣的地區名稱。必須是合法行政區名稱 (如：臺北市、高雄市)。系統會自動校正些微的輸入錯誤。若使用者沒有輸入地點，則系統預設為「臺北市」。
 
 ## 呼叫範例
 fetch_url "https://script.google.com/macros/s/AKfycbyR1nCx7yYQHgXOlZ5ko_ucbSeyJhDIp-PYxQ8rPDSdexz0I1LrDotZbvpBLZp6YpizYw/exec?location=臺北市"

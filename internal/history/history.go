@@ -7,10 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/llms/ollama"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+// Global Controller Instance (injected from main/init)
+var GlobalMemoryController *memory.Controller
 
 // ListHistory 顯示所有儲存過的 Session 簡述
 func ListHistory() {
@@ -40,11 +44,28 @@ func ListHistory() {
 
 // CheckAndSummarize 執行閒置歸納邏輯 (RAG 核心)
 // 如果最後更新時間超過一小時，則進行歸納並清理 Session
+// [Refactor] Now also triggers Memory Skills via Controller
 func CheckAndSummarize(s *Session, modelName string, systemPrompt string) {
 	if s == nil || len(s.Messages) < 2 {
 		return
 	}
 
+	// 1. Trigger Memory Skills (The New Way)
+	if GlobalMemoryController != nil {
+		// Extract recent user messages
+		// For simplicity, we just take the last user message or a window
+		// TODO: Better context window selection
+		lastMsg := s.Messages[len(s.Messages)-1]
+		if lastMsg.Role == "user" {
+			// Trigger Controller
+			logs, _ := GlobalMemoryController.ProcessChatHistory(lastMsg.Content)
+			if len(logs) > 0 {
+				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Render("\n🧠 [Memory Skills] " + strings.Join(logs, " | ")))
+			}
+		}
+	}
+
+	// 2. Legacy Summarization (The Old Way - Keep as fallback or long-term consolidation)
 	// 判斷是否閒置超過 1 小時
 	if time.Since(s.LastUpdate) > 1*time.Hour {
 		fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Render("\n[系統] 偵測到閒置超過 1 小時，正在將對話歸納至長期記憶..."))

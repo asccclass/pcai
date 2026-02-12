@@ -29,6 +29,7 @@ type AgentTool interface {
 type PythonSandboxTool struct {
 	dockerClient  *client.Client
 	workspacePath string
+	projectRoot   string // Root of the project, for mounting skills
 }
 
 // 輔助函式：寫入除錯日誌
@@ -44,7 +45,7 @@ func debugLog(format string, args ...interface{}) {
 }
 
 // NewPythonSandboxTool 建立並初始化工具
-func NewPythonSandboxTool(workspacePath string) (*PythonSandboxTool, error) {
+func NewPythonSandboxTool(workspacePath string, projectRoot string) (*PythonSandboxTool, error) {
 	debugLog("Initializing PythonSandboxTool with workspace: %s", workspacePath)
 	// 驗證 workspacePath 是否存在
 	if _, err := os.Stat(workspacePath); os.IsNotExist(err) {
@@ -68,6 +69,7 @@ func NewPythonSandboxTool(workspacePath string) (*PythonSandboxTool, error) {
 	return &PythonSandboxTool{
 		dockerClient:  cli,
 		workspacePath: workspacePath,
+		projectRoot:   projectRoot,
 	}, nil
 }
 
@@ -90,7 +92,18 @@ func (t *PythonSandboxTool) Definition() api.Tool {
 					},
 					"background": {
 						"type": "boolean",
-						"description": "是否在背景執行 (預設 false)。若為 true，會立即回傳 Container ID，不會等待執行結果。"
+						"description": "是否在背景執行 (預設 false)。"
+					},
+					"network_enabled": {
+						"type": "boolean",
+						"description": "是否允許聯網 (預設 false)。若需安裝套件或存取外部 API 請設為 true。"
+					},
+					"env_vars": {
+						"type": "object",
+						"description": "環境變數 Key-Value 對 (例如 API Keys)",
+						"additionalProperties": {
+							"type": "string"
+						}
 					},
 					"required": []string{"code"},
 				}`
@@ -110,8 +123,10 @@ func (t *PythonSandboxTool) Run(argsJSON string) (string, error) {
 	debugLog("Run called with args: %s", argsJSON)
 	// 1. 解析參數
 	var args struct {
-		Code       string `json:"code"`
-		Background bool   `json:"background"`
+		Code           string            `json:"code"`
+		Background     bool              `json:"background"`
+		NetworkEnabled bool              `json:"network_enabled"`
+		EnvVars        map[string]string `json:"env_vars"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		debugLog("Error parsing args: %v", err)
@@ -159,20 +174,42 @@ func (t *PythonSandboxTool) Run(argsJSON string) (string, error) {
 		return "", fmt.Errorf("無法取得 Workspace 絕對路徑: %v", err)
 	}
 
+	// [NEW] Mount skills directory
+	skillsPath := filepath.Join(t.projectRoot, "skills")
+	absSkillsPath, err := filepath.Abs(skillsPath)
+	if err != nil {
+		debugLog("Warning: Could not get abs path for skills: %v", err)
+		// Not fatal, just won't be mounted
+	}
+
+	// 轉換 EnvVars
+	var envList []string
+	for k, v := range args.EnvVars {
+		envList = append(envList, fmt.Sprintf("%s=%s", k, v))
+	}
+
 	containerConfig := &container.Config{
 		Image:           "python:3.9-slim",
 		Cmd:             []string{"python", "/mnt/script.py"}, // 執行掛載的腳本
-		NetworkDisabled: true,                                 // 禁止聯網
+		NetworkDisabled: !args.NetworkEnabled,                 // 根據參數決定是否禁網
 		WorkingDir:      "/mnt/workspace",                     // 設定工作目錄
+		Env:             envList,                              // 注入環境變數
+	}
+
+	binds := []string{
+		// 掛載腳本 (唯讀)
+		fmt.Sprintf("%s:/mnt/script.py:ro", absScriptPath),
+		// 掛載 Workspace (可讀寫)
+		fmt.Sprintf("%s:/mnt/workspace", absWorkspacePath),
+	}
+
+	if absSkillsPath != "" {
+		// 掛載 Skills (唯讀) - 方便存取 agent code
+		binds = append(binds, fmt.Sprintf("%s:/mnt/skills:ro", absSkillsPath))
 	}
 
 	hostConfig := &container.HostConfig{
-		Binds: []string{
-			// 掛載腳本 (唯讀)
-			fmt.Sprintf("%s:/mnt/script.py:ro", absScriptPath),
-			// 掛載 Workspace (可讀寫)
-			fmt.Sprintf("%s:/mnt/workspace", absWorkspacePath),
-		},
+		Binds:      binds,
 		AutoRemove: false,                                          // 必須設為 false，否則執行完瞬間就被刪除，讀不到 logs
 		Resources:  container.Resources{Memory: 128 * 1024 * 1024}, // 限制 128MB
 	}

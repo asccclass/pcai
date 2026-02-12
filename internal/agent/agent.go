@@ -25,6 +25,7 @@ type Agent struct {
 	OnGenerateStart        func()
 	OnModelMessageComplete func(content string)
 	OnToolCall             func(name, args string)
+	OnToolResult           func(result string) // [NEW] 工具執行結果回調
 }
 
 // NewAgent 建立一個新的 Agent 實例
@@ -92,18 +93,6 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			return "", fmt.Errorf("AI 思考錯誤: %v", err)
 		}
 
-		// 累積最終回應
-		if aiMsg.Content != "" {
-			finalResponse = aiMsg.Content
-			// 觸發訊息完成回調 (供 UI 渲染 Markdown)
-			if a.OnModelMessageComplete != nil {
-				a.OnModelMessageComplete(finalResponse)
-			}
-		}
-
-		// 將 AI 回應加入歷史
-		a.Session.Messages = append(a.Session.Messages, aiMsg)
-
 		// [FIX] 補救措施：如果 ToolCalls 為空，但 Content 看起來像是 JSON 工具呼叫
 		if len(aiMsg.ToolCalls) == 0 {
 			content := strings.TrimSpace(aiMsg.Content)
@@ -148,11 +137,24 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 						// 但如果只有 JSON，我們將其清空；如果有其他解釋文字，可能要保留？
 						// 這裡選擇清空，因為我們已經轉成執行動作了
 						aiMsg.Content = ""
-						finalResponse = "" // 清除已累積的 Content
+						finalResponse = "" // 清除已累積的 Content，避免被 OnModelMessageComplete 印出
 					}
 				}
 			}
 		}
+
+		// 累積最終回應 (移動到這裡，確保 fallback 處理完後再決定是否觸發回調)
+		if aiMsg.Content != "" {
+			// 如果 fallback 成功，這裡 Content 會變空，就不會觸發回調
+			finalResponse = aiMsg.Content
+			// 觸發訊息完成回調 (供 UI 渲染 Markdown)
+			if a.OnModelMessageComplete != nil {
+				a.OnModelMessageComplete(finalResponse)
+			}
+		}
+
+		// 將 AI 回應加入歷史 (移到處理完 Content 之後)
+		a.Session.Messages = append(a.Session.Messages, aiMsg)
 
 		// 檢查是否呼叫工具
 		if len(aiMsg.ToolCalls) == 0 {
@@ -187,6 +189,15 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 						toolFeedback = fmt.Sprintf("【SYSTEM】: %s", result)
 					}
 				}
+			}
+
+			// 觸發結果回調
+			if a.OnToolResult != nil {
+				msgToPrint := result
+				if toolFeedback != "" {
+					msgToPrint = toolFeedback
+				}
+				a.OnToolResult(msgToPrint)
 			}
 
 			// 將工具執行結果加入歷史

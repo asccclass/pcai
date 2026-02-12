@@ -335,3 +335,33 @@ func (m *Manager) ListJobs() map[string]ScheduledJob {
 	defer m.mu.RUnlock()
 	return m.jobs
 }
+
+// RunJobNow 立即執行指定的任務
+func (m *Manager) RunJobNow(taskName string) error {
+	m.mu.RLock()
+	job, exists := m.jobs[taskName]
+	m.mu.RUnlock()
+
+	if !exists {
+		// 嘗試如果不支援的名字，是否是 Type?
+		// 暫時只支援已排程的任務名稱
+		return fmt.Errorf("job not found: %s", taskName)
+	}
+
+	m.mu.RLock()
+	fn, ok := m.registry[job.TaskName] // job.TaskName 其實存的是 TaskType... Wait.
+	// Check AddJob: m.jobs[name] = ScheduledJob{..., TaskName: taskType, ...}
+	// Yes, TaskName field in ScheduledJob struct actually holds the Type.
+	m.mu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("task type '%s' not registered", job.TaskName)
+	}
+
+	// Async run to avoid blocking? Or Sync?
+	// The user might want to know it finished.
+	// But TaskFunc doesn't return error.
+	fmt.Printf("🚀 [Scheduler] Manually triggering job: %s\n", taskName)
+	go fn()
+	return nil
+}

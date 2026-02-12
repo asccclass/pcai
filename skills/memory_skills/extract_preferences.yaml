@@ -1,0 +1,34 @@
+name: "Extract User Preferences"
+description: "Identifies explicit user likes, dislikes, and settings from conversation."
+version: "1.0.0"
+trigger:
+  type: "keyword"
+  keywords: 
+    - "I like"
+    - "I love"
+    - "I hate"
+    - "I don't like"
+    - "prefer"
+    - "setting"
+    - "config"
+    - "my name is"
+    - "call me"
+template: |
+  You are a Memory Extraction AI. Your goal is to extract user preferences from the conversation.
+  
+  Input Text:
+  {{TEXT}}
+  
+  Instructions:
+  1. Identify if the user is expressing a preference, a setting, or a personal fact.
+  2. If yes, extract it into a concise statement.
+  3. Output JSON format only.
+  
+  JSON Schema:
+  {
+    "found": true,
+    "category": "preference" | "fact" | "setting",
+    "content": "User prefers dark mode"
+  }
+  
+  If nothing relevant is found, return {"found": false}.

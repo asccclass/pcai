@@ -17,8 +17,10 @@ import (
 	"github.com/asccclass/pcai/internal/gateway"
 	"github.com/asccclass/pcai/internal/gmail"
 	"github.com/asccclass/pcai/internal/heartbeat"
+	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/scheduler"
+	"github.com/asccclass/pcai/llms/ollama"
 	"github.com/asccclass/pcai/skills"
 	dclient "github.com/docker/docker/client"
 	"github.com/go-resty/resty/v2"
@@ -142,7 +144,26 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 		}
 	})
 
-	// 註冊每日簡報任務
+	// 註冊每日簡報任務 (可以是 read_calendars 或 daily_calendar_report)
+	schedMgr.RegisterTaskType("read_calendars", func() {
+		watcher := skills.NewCalendarWatcherSkill(cfg.TelegramToken, cfg.TelegramAdminID)
+		if briefing, err := watcher.GenerateDailyBriefing(client, cfg.Model); err != nil {
+			log.Printf("[Scheduler] Daily briefing failed: %v", err)
+		} else {
+			// 直接發送
+			fmt.Println("✅ [Scheduler] 發送每日行事曆簡報...")
+			if cfg.TelegramToken != "" && cfg.TelegramAdminID != "" {
+				resty.New().R().
+					SetBody(map[string]string{
+						"chat_id":    cfg.TelegramAdminID,
+						"text":       briefing,
+						"parse_mode": "Markdown",
+					}).
+					Post(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.TelegramToken))
+			}
+		}
+	})
+
 	schedMgr.RegisterTaskType("daily_calendar_report", func() {
 		watcher := skills.NewCalendarWatcherSkill(cfg.TelegramToken, cfg.TelegramAdminID)
 		if briefing, err := watcher.GenerateDailyBriefing(client, cfg.Model); err != nil {
@@ -210,6 +231,25 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	fmt.Println("✅ [Scheduler] 正在初始化記憶庫同步...")
 	SyncMemory(memManager, mdPath)
 
+	// 1. 初始化記憶模組
+	memorySkillsDir := filepath.Join(home, "skills", "memory_skills")
+	// Ensure dir exists
+	_ = os.MkdirAll(memorySkillsDir, 0755)
+
+	memSkillMgr := memory.NewSkillManager(memorySkillsDir)
+	if err := memSkillMgr.LoadSkills(); err != nil {
+		fmt.Printf("⚠️ [Memory] Failed to load memory skills: %v\n", err)
+	}
+
+	// Wrapper for ChatStream to match LLMProvider signature
+	memExecutor := memory.NewMemoryExecutor(ollama.ChatStream, cfg.Model)
+
+	memController := memory.NewController(memManager, memSkillMgr, memExecutor)
+
+	// Inject into history package
+	history.GlobalMemoryController = memController
+	fmt.Printf("✅ [Memory] Controller initialized with %d skills\n", len(memSkillMgr.Skills))
+
 	// 檔案系統管理器，設定 "Sandbox" 根目錄
 	workspacePath := os.Getenv("WORKSPACE_PATH")
 	if workspacePath == "" {
@@ -245,6 +285,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
 	registry.Register(&KnowledgeSearchTool{})
 	registry.Register(&FetchURLTool{})
+	registry.Register(&WebSearchTool{})
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&KnowledgeAppendTool{})
@@ -253,7 +294,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(NewGoogleTool())
 
 	// Python Sandbox Tool
-	if pyTool, err := NewPythonSandboxTool(workspacePath); err != nil {
+	if pyTool, err := NewPythonSandboxTool(workspacePath, home); err != nil {
 		fmt.Printf("⚠️ [Tools] Python Sandbox not available: %v\n", err)
 	} else {
 		registry.Register(pyTool)
@@ -267,6 +308,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 
 	// 排程工具 (讓 LLM 可以設定 Cron)
 	registry.Register(&SchedulerTool{Mgr: schedMgr})
+
+	// 任務規劃工具
+	registry.Register(NewPlannerTool())
 
 	// 註冊檔案系統工具
 	registry.Register(&FsMkdirTool{Manager: fsManager})
@@ -311,6 +355,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 		for _, ds := range dynamicSkills {
 			toolStr := skills.NewDynamicTool(ds, registry, dockerCli)
 			registry.Register(toolStr)
+			fmt.Printf("✅ [Skills] Loaded: %s (%s)\n", ds.Name, ds.Description)
 		}
 	}
 

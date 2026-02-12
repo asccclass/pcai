@@ -29,26 +29,25 @@ func (t *SchedulerTool) Definition() api.Tool {
 				var props api.ToolPropertiesMap
 				js := `{
 					"action": {
-						"type":        "string",
-						"description": "執行動作: 'add' (新增/更新) 或 'remove' (移除)",
-						"enum":        ["add", "remove"]
+						"type": "string",
+						"description": "執行動作: 'add' (新增/更新), 'remove' (移除), 'run_once' (立即執行)",
+						"enum": ["add", "remove", "run_once"]
 					},
 					"cron_expression": {
-						"type":        "string",
+						"type": "string",
 						"description": "Cron 格式字串，例如 '0 8 * * *' 代表每天早上 8 點。移除任務時可為空。"
 					},
 					"task_type": {
-						"type":        "string",
+						"type": "string",
 						"description": "執行的任務類型",
-						"enum":        ["read_email"]
+						"enum": ["read_email", "read_calendars"]
 					},
 					"task_name": {
-						"type":        "string",
-						"description": "任務的簡短名稱，如 'morning_check'"
+						"type": "string",
+						"description": "任務的簡短名稱 (ID)，如 'morning_check'。 run_once 必填。"
 					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)
-
 				return api.ToolFunctionParameters{
 					Type:       "object",
 					Properties: &props,
@@ -61,49 +60,76 @@ func (t *SchedulerTool) Definition() api.Tool {
 
 // Run 滿足 AgentTool 介面，解析 Ollama 傳入的 JSON 參數
 func (t *SchedulerTool) Run(argsJSON string) (string, error) {
-	var args struct {
-		Action   string `json:"action"`
-		CronExpr string `json:"cron_expression"`
-		TaskType string `json:"task_type"`
-		TaskName string `json:"task_name"`
+	// 定義一個寬鬆的結構來接收可能的巢狀物件
+	var rawArgs struct {
+		Action   interface{} `json:"action"`
+		CronExpr interface{} `json:"cron_expression"`
+		TaskType interface{} `json:"task_type"`
+		TaskName interface{} `json:"task_name"`
 	}
 
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+	if err := json.Unmarshal([]byte(argsJSON), &rawArgs); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %v", err)
 	}
-	// 強制映射：將 LLM 可能輸出的 check_email 轉為註冊好的 read_gmail
-	actualTaskType := args.TaskType
-	if actualTaskType == "check_email" {
-		actualTaskType = "read_email"
+
+	// 輔助函式：從 interface{} 提取字串，支援 string 或 {"value": "..."}
+	getString := func(v interface{}) string {
+		if s, ok := v.(string); ok {
+			return s
+		}
+		if m, ok := v.(map[string]interface{}); ok {
+			if val, ok := m["value"].(string); ok {
+				return val
+			}
+		}
+		return ""
 	}
 
-	if args.TaskName == "" {
-		args.TaskName = fmt.Sprintf("auto_job_%s", actualTaskType)
+	action := getString(rawArgs.Action)
+	cronExpr := getString(rawArgs.CronExpr)
+	taskType := getString(rawArgs.TaskType)
+	taskName := getString(rawArgs.TaskName)
+
+	// 強制映射：將 LLM 可能輸出的 check_email 轉為註冊好的 read_gmail
+	if taskType == "check_email" {
+		taskType = "read_email"
+	}
+
+	if taskName == "" {
+		taskName = fmt.Sprintf("auto_job_%s", taskType)
 	}
 
 	// 預設 action 為 add
-	if args.Action == "" {
-		args.Action = "add"
+	if action == "" {
+		action = "add"
 	}
 
-	if args.Action == "remove" {
-		err := t.Mgr.RemoveJob(args.TaskName)
+	if action == "remove" {
+		err := t.Mgr.RemoveJob(taskName)
 		if err != nil {
 			return "", fmt.Errorf("failed to remove job: %v", err)
 		}
-		return fmt.Sprintf("【SYSTEM】已移除背景任務, ID: %s", args.TaskName), nil
+		return fmt.Sprintf("【SYSTEM】已移除背景任務, ID: %s", taskName), nil
+	}
+
+	if action == "run_once" {
+		err := t.Mgr.RunJobNow(taskName)
+		if err != nil {
+			return "", fmt.Errorf("failed to run job: %v", err)
+		}
+		return fmt.Sprintf("【SYSTEM】已觸發任務立即執行: %s", taskName), nil
 	}
 
 	// Add logic
-	if args.CronExpr == "" {
+	if cronExpr == "" {
 		return "", fmt.Errorf("cron_expression is required for add action")
 	}
 
-	err := t.Mgr.AddJob(args.TaskName, args.CronExpr, actualTaskType, "Created via Tool")
+	err := t.Mgr.AddJob(taskName, cronExpr, taskType, "Created via Tool")
 	if err != nil {
 		fmt.Printf("Job Failed: %s\n", err)
 		return "", fmt.Errorf("scheduler error: %v", err)
 	}
 
-	return fmt.Sprintf("【SYSTEM】背景啟動, ID: %s, Cron: %s. Please inform the user that their request has been set up and will run automatically.", args.TaskName, args.CronExpr), nil
+	return fmt.Sprintf("【SYSTEM】背景啟動, ID: %s, Cron: %s. Please inform the user that their request has been set up and will run automatically.", taskName, cronExpr), nil
 }

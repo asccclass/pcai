@@ -39,28 +39,26 @@ func (t *GoogleTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name: "google_services",
-			Description: "使用 Google Services (Gmail, Calendar, Drive, etc) 進行操作。\n" +
-				"常用範例：\n" +
-				"1. 檢查今日行事曆 (預設): service='calendar', command='events', args=['--today']\n" +
-				"2. 檢查特定人行事曆: service='calendar', command='events', args=['user@example.com', '--today']\n" +
-				"3. 寄信: service='gmail', command='send', args=['--to', 'user@example.com', '--subject', 'Hi', '--body', 'Content']\n" +
-				"4. 搜尋郵件: service='gmail', command='search', args=['newer_than:1d']\n" +
-				"注意：gogcli 的 <calendarId> 是位置參數，請直接放在 args 的第一個元素，不要用 --email 標籤。",
+			Description: "Access Google Services (Gmail, Calendar, etc).\n" +
+				"Examples:\n" +
+				"1. Check calendar: service='calendar', command='events', args=['--from', '2025-01-01', '--to', '2025-01-07']\n" +
+				"2. Send email: service='gmail', command='send', args=['--to', 'user@example.com', '--subject', 'Hi', '--body', 'Content']\n" +
+				"IMPORTANT: For Calendar, always calculate specific dates for 'today', 'this week', etc. and use --from/--to.",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
 					"service": {
 						"type": "string",
-						"description": "服務名稱，例如 'gmail', 'calendar', 'drive', 'tasks', 'contacts'"
+						"description": "Service name, e.g., 'gmail', 'calendar', 'drive', 'tasks', 'contacts'"
 					},
 					"command": {
 						"type": "string",
-						"description": "指令，例如 'events' (行事曆), 'send' (寄信), 'search' (搜尋), 'list' (列表)"
+						"description": "Command, e.g., 'events' (calendar), 'send' (mail), 'search', 'list'"
 					},
 					"args": {
 						"type": "array",
 						"items": { "type": "string" },
-						"description": "指令參數列表。注意：位置參數(如 calendarId)應直接列出，flag 參數(如 --today)則作為獨立字串列出。"
+						"description": "List of command arguments. IMPORTANT: Do NOT use vague time flags like --thisweek. YOU MUST calculate exact dates and use --from YYYY-MM-DD --to YYYY-MM-DD for date ranges."
 					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)
