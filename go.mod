@@ -17,7 +17,6 @@ require (
 	github.com/ollama/ollama v0.15.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
-	github.com/valyala/fasthttp v1.69.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.40.0
 	golang.org/x/text v0.33.0
@@ -98,6 +97,7 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasthttp v1.69.0 // indirect
 	github.com/valyala/fastjson v1.6.7 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
