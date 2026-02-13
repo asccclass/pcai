@@ -27,6 +27,38 @@ func (t *ShellExecTool) sanitizeCommand(cmd string) string {
 		cmd = strings.Replace(cmd, "delete ", "rm -f ", 1)
 	}
 
+	// [FIX] OS 感知指令翻譯：避免 Linux 指令在 Windows 上失敗
+	if runtime.GOOS == "windows" {
+		linuxToWindows := map[string]string{
+			"ls":     "dir",
+			"ls -l":  "dir",
+			"ls -a":  "dir /a",
+			"ls -la": "dir /a",
+			"ls -al": "dir /a",
+			"pwd":    "cd",
+			"cat":    "type",
+			"rm":     "del",
+			"cp":     "copy",
+			"mv":     "move",
+			"clear":  "cls",
+		}
+		trimmed := strings.TrimSpace(cmd)
+		// 先嘗試完整匹配
+		if winCmd, ok := linuxToWindows[trimmed]; ok {
+			cmd = winCmd
+		} else {
+			// 嘗試只匹配指令部分 (第一個 token)
+			parts := strings.SplitN(trimmed, " ", 2)
+			if winCmd, ok := linuxToWindows[parts[0]]; ok {
+				if len(parts) > 1 {
+					cmd = winCmd + " " + parts[1]
+				} else {
+					cmd = winCmd
+				}
+			}
+		}
+	}
+
 	// 最後做一次前後空白修剪
 	return strings.TrimSpace(cmd)
 }

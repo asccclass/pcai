@@ -116,6 +116,12 @@ func (s *CalendarWatcherSkill) GetEvents(from, to time.Time) ([]CalendarEvent, e
 
 	cmd := exec.Command(s.GogPath, "calendar", "events", "--all", "--from", fromStr, "--to", toStr, "--json")
 	cmd.Env = os.Environ()
+	// [FIX] 注入 ZONEINFO 以修復 Windows 上的時區解析問題
+	goroot := os.Getenv("GOROOT")
+	if goroot != "" {
+		zoneinfo := filepath.Join(goroot, "lib", "time", "zoneinfo.zip")
+		cmd.Env = append(cmd.Env, "ZONEINFO="+zoneinfo)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

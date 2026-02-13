@@ -53,13 +53,38 @@ func (t *WebSearchTool) Definition() api.Tool {
 }
 
 func (t *WebSearchTool) Run(argsJSON string) (string, error) {
-	var args struct {
-		Query   string `json:"query"`
-		Count   int    `json:"count"`
-		Country string `json:"country"`
+	// Use interface{} to handle potential nested JSON objects (e.g. {"value": "..."})
+	var rawArgs struct {
+		Query   interface{} `json:"query"`
+		Count   interface{} `json:"count"`
+		Country interface{} `json:"country"`
 	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+	if err := json.Unmarshal([]byte(argsJSON), &rawArgs); err != nil {
 		return "", fmt.Errorf("invalid arguments: %v", err)
+	}
+
+	// Helper to extract string from string or map
+	getString := func(v interface{}) string {
+		if s, ok := v.(string); ok {
+			return s
+		}
+		if m, ok := v.(map[string]interface{}); ok {
+			if val, ok := m["value"].(string); ok {
+				return val
+			}
+		}
+		return ""
+	}
+
+	query := getString(rawArgs.Query)
+	country := getString(rawArgs.Country)
+
+	// Handle count (int or float64 from JSON)
+	count := 5
+	if val, ok := rawArgs.Count.(float64); ok {
+		count = int(val)
+	} else if val, ok := rawArgs.Count.(int); ok {
+		count = val
 	}
 
 	apiKey := os.Getenv("BRAVE_API_KEY")
@@ -67,17 +92,17 @@ func (t *WebSearchTool) Run(argsJSON string) (string, error) {
 		return "⚠️ BRAVE_API_KEY is not set in envfile. Please configure it to use web search.", nil
 	}
 
-	if args.Count <= 0 {
-		args.Count = 5
+	if count <= 0 {
+		count = 5
 	}
-	if args.Count > 20 {
-		args.Count = 20
+	if count > 20 {
+		count = 20
 	}
-	if args.Country == "" {
-		args.Country = "US"
+	if country == "" {
+		country = "US"
 	}
 
-	return runBraveSearch(apiKey, args.Query, args.Count, args.Country)
+	return runBraveSearch(apiKey, query, count, country)
 }
 
 type BraveSearchResult struct {

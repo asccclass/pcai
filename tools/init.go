@@ -3,6 +3,7 @@ package tools
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -199,10 +200,6 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	})
 
 	// 建立 Skills
-	// 在所有 TaskType 註冊完成後，才載入資料庫中的排程
-	if err := schedMgr.LoadJobs(); err != nil {
-		fmt.Printf("⚠️ [Scheduler] Failed to load persistent jobs: %v\n", err)
-	}
 
 	// 初始化記憶體管理器 (RAG)
 	// 定義路徑
@@ -282,7 +279,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
-	registry.Register(&EmailTool{})
+	// registry.Register(&EmailTool{}) // Replaced by dynamic skill
 	registry.Register(NewGoogleTool())
 	registry.Register(&GitAutoCommitTool{}) // Git 自動提交工具
 
@@ -362,6 +359,175 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		BaseDir: skillsDir,
 	})
 
+	// [FIX] 註冊 read_email 任務類型 (解決 Scheduler Warning)
+	schedMgr.RegisterTaskType("read_email", func() {
+		// 預設參數: 查閱未讀信件
+		args := `{"query":"is:unread", "limit":5}`
+		res, err := registry.CallTool("read_email", args)
+		if err != nil {
+			log.Printf("❌ [Scheduler] read_email task failed: %v", err)
+			return
+		}
+		// 如果有內容 (且不是找不到)，發送到 Telegram
+		if res != "" && !strings.Contains(res, "找不到符合條件的郵件") {
+			fmt.Println("📧 [Scheduler] Sending email digest to Telegram...")
+			if cfg.TelegramToken != "" && cfg.TelegramAdminID != "" {
+				resty.New().R().
+					SetBody(map[string]string{
+						"chat_id":    cfg.TelegramAdminID,
+						"text":       res,
+						"parse_mode": "Markdown",
+					}).
+					Post(fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.TelegramToken))
+			}
+		}
+	})
+	// [NEW] 註冊晨間簡報任務 (email + calendar + weather → LLM → Telegram)
+	schedMgr.RegisterTaskType("morning_briefing", func() {
+		fmt.Println("☀️ [Scheduler] 開始產生晨間簡報...")
+		today := time.Now().Format("2006-01-02")
+
+		var emailResult, calendarResult, weatherResult string
+
+		// 1. 讀取未讀郵件
+		if res, err := registry.CallTool("read_email", `{"query":"is:unread","limit":"10"}`); err != nil {
+			log.Printf("⚠️ [MorningBriefing] Email 讀取失敗: %v", err)
+			emailResult = "（郵件讀取失敗）"
+		} else {
+			emailResult = res
+		}
+
+		// 2. 讀取今日行程
+		calArgs := fmt.Sprintf(`{"from":"%s","to":"%s"}`, today, today)
+		if res, err := registry.CallTool("read_calendars", calArgs); err != nil {
+			log.Printf("⚠️ [MorningBriefing] 行事曆讀取失敗: %v", err)
+			calendarResult = "（行事曆讀取失敗）"
+		} else {
+			calendarResult = res
+		}
+
+		// 3. 查詢天氣
+		if res, err := registry.CallTool("get_taiwan_weather", `{"location":"臺北市"}`); err != nil {
+			log.Printf("⚠️ [MorningBriefing] 天氣查詢失敗: %v", err)
+			weatherResult = "（天氣查詢失敗）"
+		} else {
+			weatherResult = res
+		}
+
+		// 4. 用 LLM 彙整簡報
+		prompt := fmt.Sprintf(`你是一位貼心的數位管家。現在是早上，請根據以下資訊為使用者產生一份簡潔的「晨間簡報」。
+請用繁體中文、Markdown 格式回覆，語氣溫暖專業。
+
+## 📧 未讀郵件
+%s
+
+## 📅 今日行程
+%s
+
+## 🌤️ 天氣概況
+%s
+
+請幫我彙整成：
+1. ☀️ 早安問候（一句話）
+2. 📧 郵件摘要（最多 3 筆重點）
+3. 📅 今日行程總覽
+4. 🌤️ 天氣提醒
+5. 💡 溫馨建議
+`, emailResult, calendarResult, weatherResult)
+
+		// 使用 Ollama 產生摘要
+		var result struct {
+			Response string `json:"response"`
+		}
+		resp, err := resty.New().SetTimeout(120 * time.Second).R().
+			SetBody(map[string]interface{}{
+				"model":  cfg.Model,
+				"prompt": prompt,
+				"stream": false,
+			}).
+			SetResult(&result).
+			Post(fmt.Sprintf("%s/api/generate", cfg.OllamaURL))
+
+		briefing := ""
+		if err != nil || resp.IsError() {
+			log.Printf("⚠️ [MorningBriefing] LLM 彙整失敗: %v", err)
+			// Fallback: 直接拼裝原始資料
+			briefing = fmt.Sprintf("☀️ 早安！以下是今日概覽：\n\n📧 **郵件**\n%s\n\n📅 **行程**\n%s\n\n🌤️ **天氣**\n%s",
+				emailResult, calendarResult, weatherResult)
+		} else {
+			briefing = strings.TrimSpace(result.Response)
+		}
+
+		// 5. 發送到 Telegram (先嘗試 Markdown，失敗則用純文字)
+		if cfg.TelegramToken != "" && cfg.TelegramAdminID != "" {
+			fmt.Println("📨 [Scheduler] 發送晨間簡報到 Telegram...")
+			tgURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.TelegramToken)
+			tgResp, tgErr := resty.New().R().
+				SetBody(map[string]string{
+					"chat_id":    cfg.TelegramAdminID,
+					"text":       briefing,
+					"parse_mode": "Markdown",
+				}).
+				Post(tgURL)
+			// 如果 Markdown 解析失敗 (Telegram 回傳 400)，改用純文字重送
+			if tgErr != nil || tgResp.StatusCode() == 400 {
+				log.Printf("⚠️ [MorningBriefing] Markdown 發送失敗，改用純文字重送...")
+				resty.New().R().
+					SetBody(map[string]string{
+						"chat_id": cfg.TelegramAdminID,
+						"text":    briefing,
+					}).
+					Post(tgURL)
+			}
+		}
+		fmt.Println("✅ [Scheduler] 晨間簡報完成！")
+
+		// [短期記憶] 自動存入晨間簡報各工具回應
+		ttlDays := cfg.ShortTermTTLDays
+		if ttlDays <= 0 {
+			ttlDays = 7
+		}
+		ctxMem := context.Background()
+		if emailResult != "" {
+			_ = sqliteDB.AddShortTermMemory(ctxMem, "email", emailResult, ttlDays)
+		}
+		if calendarResult != "" {
+			_ = sqliteDB.AddShortTermMemory(ctxMem, "calendar", calendarResult, ttlDays)
+		}
+		if weatherResult != "" {
+			_ = sqliteDB.AddShortTermMemory(ctxMem, "weather", weatherResult, ttlDays)
+		}
+		if briefing != "" {
+			_ = sqliteDB.AddShortTermMemory(ctxMem, "briefing", briefing, ttlDays)
+		}
+	})
+
+	// 預設註冊晨間簡報排程 (每天 06:30)
+	// 透過 AddJob 確保持久化到 DB (如果已存在則自動更新)
+	if err := schedMgr.AddJob("daily_morning_briefing", "30 6 * * *", "morning_briefing", "每日 06:30 晨間簡報 (Email+行事曆+天氣)"); err != nil {
+		// 如果已存在，不報錯 (AddJob 使用 ON CONFLICT UPDATE)
+		log.Printf("ℹ️ [Scheduler] morning_briefing job: %v", err)
+	}
+
+	// --- 註冊 memory_cleanup 任務類型 (每天凌晨 3 點清理過期短期記憶) ---
+	schedMgr.RegisterTaskType("memory_cleanup", func() {
+		ctxClean := context.Background()
+		deleted, err := sqliteDB.CleanExpiredMemory(ctxClean)
+		if err != nil {
+			log.Printf("⚠️ [MemoryCleanup] 清理失敗: %v", err)
+		} else {
+			fmt.Printf("🧹 [MemoryCleanup] 已刪除 %d 筆過期短期記憶\n", deleted)
+		}
+	})
+	if err := schedMgr.AddJob("daily_memory_cleanup", "0 3 * * *", "memory_cleanup", "每日 03:00 清理過期短期記憶"); err != nil {
+		log.Printf("ℹ️ [Scheduler] memory_cleanup job: %v", err)
+	}
+
+	// 在所有 TaskType 註冊完成後 (包含 Dynamic Tools)，才載入資料庫中的排程
+	if err := schedMgr.LoadJobs(); err != nil {
+		fmt.Printf("⚠️ [Scheduler] Failed to load persistent jobs: %v\n", err)
+	}
+
 	// --- 新增：Telegram 整合 ---
 	var tgChannel *channel.TelegramChannel // 宣告在外部以供 cleanup 存取
 
@@ -369,6 +535,24 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	if cfg.TelegramToken != "" {
 		// 1. 建立 Agent Adapter
 		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt, cfg.TelegramDebug, logger)
+
+		// [短期記憶] 設定自動存入回調
+		ttlDays := cfg.ShortTermTTLDays
+		if ttlDays <= 0 {
+			ttlDays = 7
+		}
+		adapter.SetShortTermMemoryCallback(func(source, content string) {
+			// 截斷過長內容 (避免 DB 膨脹)
+			if len(content) > 2000 {
+				content = content[:2000] + "...«已截斷»"
+			}
+			ctxMem := context.Background()
+			if err := sqliteDB.AddShortTermMemory(ctxMem, source, content, ttlDays); err != nil {
+				fmt.Printf("⚠️ [ShortTermMemory] 存入失敗 (%s): %v\n", source, err)
+			} else {
+				fmt.Printf("📝 [ShortTermMemory] 已存入 [%s] (%d 字元, TTL=%d天)\n", source, len(content), ttlDays)
+			}
+		})
 
 		// 2. 建立 Dispatcher
 		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)

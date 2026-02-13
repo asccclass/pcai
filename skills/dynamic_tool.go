@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -514,9 +515,28 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 
 	// 4. 背景執行 (Fallback to Shell)
 	if result == "" && executionErr == nil && !useDocker {
+		// inject bin/ to PATH
+		cwd, _ := os.Getwd()
+		binPath := filepath.Join(cwd, "bin")
+		pathEnv := os.Getenv("PATH")
+		if runtime.GOOS == "windows" {
+			pathEnv = binPath + ";" + pathEnv
+		} else {
+			pathEnv = binPath + ":" + pathEnv
+		}
+
 		// 使用開頭的字作為執行檔，後面的作為參數
 		// 注意：這裡直接執行可能會有安全風險
 		cmd := exec.Command("cmd", "/C", finalCmd)
+		cmd.Env = append(os.Environ(), "PATH="+pathEnv)
+		// [FIX] 注入 ZONEINFO 以修復 Windows 上的時區解析問題
+		if runtime.GOOS == "windows" {
+			goroot := runtime.GOROOT()
+			if goroot != "" {
+				zoneinfo := filepath.Join(goroot, "lib", "time", "zoneinfo.zip")
+				cmd.Env = append(cmd.Env, "ZONEINFO="+zoneinfo)
+			}
+		}
 		out, err := cmd.CombinedOutput()
 		output := string(out)
 		if err != nil {

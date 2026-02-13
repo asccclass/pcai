@@ -40,7 +40,7 @@ func (t *SchedulerTool) Definition() api.Tool {
 					"task_type": {
 						"type": "string",
 						"description": "排程的任務類型（僅用於排程設定，不代表直接執行）",
-						"enum": ["read_email", "read_calendars"]
+						"enum": ["read_email", "read_calendars", "morning_briefing", "memory_cleanup"]
 					},
 					"task_name": {
 						"type": "string",
@@ -115,6 +115,16 @@ func (t *SchedulerTool) Run(argsJSON string) (string, error) {
 	if action == "run_once" {
 		err := t.Mgr.RunJobNow(taskName)
 		if err != nil {
+			// Fallback: 嘗試用 task_type 搜尋已存在的任務
+			if taskType != "" {
+				for name, job := range t.Mgr.ListJobs() {
+					if job.TaskName == taskType {
+						if err2 := t.Mgr.RunJobNow(name); err2 == nil {
+							return fmt.Sprintf("【SYSTEM】已觸發任務立即執行: %s", name), nil
+						}
+					}
+				}
+			}
 			return "", fmt.Errorf("failed to run job: %v", err)
 		}
 		return fmt.Sprintf("【SYSTEM】已觸發任務立即執行: %s", taskName), nil

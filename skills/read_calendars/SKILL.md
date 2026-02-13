@@ -1,7 +1,7 @@
 ---
 name: read_calendars
 description: BEST tool for reading/checking user's daily schedule or calendar events from ALL accounts.
-command: bin\gog.exe calendar events --all --from {{from}} --to {{to}} --json
+command: gog calendar events --all --from {{from}} --to {{to}} --json
 metadata:
   pcai:
     requires:
