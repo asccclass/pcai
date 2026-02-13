@@ -183,10 +183,14 @@ func findClosestMatch(input string, options []string) (string, bool) {
 		}
 	}
 
-	// 設定閾值：對於短字串(如地名)，允許 1~2 個編輯距離
+	// 設定閾值：對於短字串(如地名)，允許編輯距離
 	// 例如：台北市 (3 chars) -> 臺北市 (3 chars), dist=1 (台!=臺)
+	// 林口 (2 chars) -> 宜蘭 (2 chars), dist=2 -> 不應匹配
 	threshold := 2
-	if len([]rune(input)) > 4 {
+	inputLen := len([]rune(input))
+	if inputLen <= 2 {
+		threshold = 1 // 2字以下只允許錯1字 (e.g. 台南->臺南)
+	} else if inputLen > 4 {
 		threshold = 3
 	}
 
@@ -271,6 +275,21 @@ func (t *DynamicTool) Definition() api.Tool {
 	}
 }
 
+// getStringValue extracts string from potential complex structures
+func getStringValue(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case map[string]interface{}:
+		// Check for {"value": "..."} or {"type": "...", "value": "..."}
+		if v, ok := val["value"]; ok {
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	// Fallback to default string representation
+	return fmt.Sprintf("%v", v)
+}
+
 func (t *DynamicTool) Run(argsJSON string) (string, error) {
 	// 1. 解析參數
 	var args map[string]interface{}
@@ -280,7 +299,9 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 
 	// 1.5 [VALIDATION & AUTO-CORRECTION] 參數驗證與自動校正
 	for k, v := range args {
-		valStr := fmt.Sprintf("%v", v)
+		// valStr := fmt.Sprintf("%v", v)
+		// [FIX] Handle complex value types (e.g. {"type":"string", "value":"..."})
+		valStr := getStringValue(v)
 
 		// 1.5.1 檢查是否有別名 (Alias) 設定
 		if aliases, ok := t.Def.OptionAliases[k]; ok && len(aliases) > 0 {
@@ -299,6 +320,9 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 				args[k] = canonical // 更新為標準值，以便後續驗證與快取
 			}
 		}
+
+		// Update args with normalized string anyway, so subsequent logic sees string
+		args[k] = valStr
 
 		// 檢查該參數是否有定義選項
 		if opts, ok := t.Def.Options[k]; ok && len(opts) > 0 {
@@ -350,7 +374,7 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 	// 2. 替換指令中的變數 (支援 {{param}} 和 {{url:param}})
 	finalCmd := t.Def.Command
 	for k, v := range args {
-		valStr := fmt.Sprintf("%v", v)
+		valStr := getStringValue(v)
 
 		// 替換原始參數: {{param}}
 		placeholder := fmt.Sprintf("{{%s}}", k)
@@ -383,11 +407,20 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 
 		// 嘗試從 Registry 查找工具
 		if t.Registry != nil {
-			// ALIAS: http_get -> fetch_url
-			if toolName == "http_get" || toolName == "fetch_url" {
+			// ALIAS: http_get -> web_fetch (fetch_url is deprecated name)
+			if toolName == "http_get" || toolName == "fetch_url" || toolName == "web_fetch" {
 				targetURL := strings.Trim(toolArgs, "\"'")
+				// 支援帶有參數的 url (e.g. web_fetch "http://..." --extractMode text)
+				// 但這裡簡單處理，假設只有 URL
+				// 如果 toolArgs 包含空白，可能需要更複雜的解析。
+				// 目前 SKILL.md 中是 dynamic replacement，所以通常是一長串 URL。
+
+				// 移除可能的 ExtractMode 參數如果混在裡面?
+				// 暫時假設 SKILL.md 只傳 URL
+
 				jsonParams := fmt.Sprintf(`{"url": "%s"}`, targetURL)
-				result, executionErr = t.Registry.CallTool("fetch_url", jsonParams)
+				// Call 'web_fetch' tool (registered name)
+				result, executionErr = t.Registry.CallTool("web_fetch", jsonParams)
 			}
 		}
 	} else {
@@ -505,6 +538,11 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 
 	if executionErr != nil {
 		return result, executionErr // 回傳錯誤訊息
+	}
+
+	// [POST-PROCESS] 針對特定 Skill 進行輸出後處理
+	if t.Def.Name == "read_calendars" {
+		result = postProcessCalendarOutput(result)
 	}
 
 	return result, nil

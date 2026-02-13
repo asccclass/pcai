@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -212,7 +214,34 @@ func main() {
 	flag.PrintDefaults()
 }
 
-// Add state to struct
-// I have to add `runDocs bool` to `RecursiveDownloader` struct to allow `Download` to choose method?
-// Or just hardcode `legacyProcessURL` inside `Download` since `Download` is ONLY for legacy docs?
-// Yes, `Download` is only used by the legacy block.
+// Download 遞迴下載所有頁面
+func (rd *RecursiveDownloader) Download() {
+	rd.urlsToVisit[rd.startURL] = true
+
+	for len(rd.urlsToVisit) > 0 {
+		// 取得下一個要造訪的 URL
+		var nextURL string
+		for u := range rd.urlsToVisit {
+			nextURL = u
+			break
+		}
+		delete(rd.urlsToVisit, nextURL)
+
+		if rd.visitedURLs[nextURL] {
+			continue
+		}
+		rd.visitedURLs[nextURL] = true
+
+		fmt.Printf("📥 下載: %s\n", nextURL)
+		if err := rd.processURL(nextURL); err != nil {
+			fmt.Printf("  ⚠️ 錯誤: %v\n", err)
+		}
+
+		// 等待以避免被擋
+		if rd.waitTime > 0 {
+			time.Sleep(rd.waitTime)
+		}
+	}
+
+	fmt.Printf("✅ 完成！共下載 %d 頁\n", len(rd.visitedURLs))
+}

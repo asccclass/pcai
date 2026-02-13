@@ -16,6 +16,15 @@ type GoogleTool struct {
 }
 
 func NewGoogleTool() *GoogleTool {
+	// 優先使用環境變數設定
+	if envPath := os.Getenv("GOG_PATH"); envPath != "" {
+		if _, err := os.Stat(envPath); err == nil {
+			return &GoogleTool{
+				BinPath: envPath,
+			}
+		}
+	}
+
 	// 預設找當前目錄下的 bin/gog.exe 或 gog
 	// 若找不到，則嘗試從系統 PATH 尋找
 	binName := "gog"
@@ -74,23 +83,26 @@ func (t *GoogleTool) Definition() api.Tool {
 			Description: "Access Google Services (Gmail, Calendar, etc).\n" +
 				"Examples:\n" +
 				"1. Check calendar: service='calendar', command='events', args=['--from', '2025-01-01', '--to', '2025-01-07']\n" +
+				"   (NOTE: For reading your daily schedule/agenda, prefer using the 'read_calendars' skill if available, as it scans ALL calendars.)\n" +
 				"2. Send email: service='gmail', command='send', args=['--to', 'user@example.com', '--subject', 'Hi', '--body', 'Content']\n" +
-				"IMPORTANT: For Calendar, always calculate specific dates for 'today', 'this week', etc. and use --from/--to.",
+				"3. Search emails: service='gmail', command='search', args=['is:unread', '--limit', '10']\n" +
+				"IMPORTANT: 'summary' is NOT a valid command. To summarize, use 'search' to get content, then summarize it yourself.\n" +
+				"IMPORTANT: For Calendar, always calculate exact dates for --from/--to.",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
 					"service": {
 						"type": "string",
-						"description": "Service name, e.g., 'gmail', 'calendar', 'drive', 'tasks', 'contacts'"
+						"description": "Service name: 'gmail', 'calendar', 'drive', 'tasks', 'contacts'"
 					},
 					"command": {
 						"type": "string",
-						"description": "Command, e.g., 'events' (calendar), 'send' (mail), 'search', 'list'"
+						"description": "Command. Gmail: 'search', 'send', 'get', 'labels'. Calendar: 'events' (or 'list' as alias)"
 					},
 					"args": {
 						"type": "array",
 						"items": { "type": "string" },
-						"description": "List of command arguments. IMPORTANT: Do NOT use vague time flags like --thisweek. YOU MUST calculate exact dates and use --from YYYY-MM-DD --to YYYY-MM-DD for date ranges."
+						"description": "Command arguments. for 'events', use '--all' to fetch from ALL calendars. Use '--from'/'--to' for dates."
 					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)
@@ -110,14 +122,16 @@ func (t *GoogleTool) sanitize(input string) string {
 }
 
 func (t *GoogleTool) Run(argsJSON string) (string, error) {
-	var args struct {
-		Service string   `json:"service"`
-		Command string   `json:"command"`
-		Args    []string `json:"args"`
+	// Parse into map[string]interface{} to handle wrapped values
+	var rawArgs map[string]interface{}
+	if err := json.Unmarshal([]byte(argsJSON), &rawArgs); err != nil {
+		return "", fmt.Errorf("参数解析失敗: %v", err)
 	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("参數解析失敗: %v", err)
-	}
+
+	// Use helper functions to extract values robustly
+	service := ToString(rawArgs["service"])
+	command := ToString(rawArgs["command"])
+	args := ToStringSlice(rawArgs["args"])
 
 	// 檢查執行檔是否存在
 	if _, err := os.Stat(t.BinPath); os.IsNotExist(err) {
@@ -129,16 +143,16 @@ func (t *GoogleTool) Run(argsJSON string) (string, error) {
 	// 或是 gog calendar events --today
 
 	// 參數檢查
-	if args.Service == "" {
+	if service == "" {
 		return "", fmt.Errorf("service 參數不能為空")
 	}
 
 	// 建構 exec 參數
-	execArgs := []string{args.Service}
-	if args.Command != "" {
-		execArgs = append(execArgs, args.Command)
+	execArgs := []string{service}
+	if command != "" {
+		execArgs = append(execArgs, command)
 	}
-	execArgs = append(execArgs, args.Args...)
+	execArgs = append(execArgs, args...)
 
 	// 準備執行 (加上 GOG_JSON=1 強制輸出 JSON 格式方便解析，或者保持原樣讓 LLM 閱讀?)
 	// 考慮到 LLM 閱讀能力，人類可讀的格式可能更好。gogcli 預設就是人類可讀的表格。
@@ -156,6 +170,8 @@ func (t *GoogleTool) Run(argsJSON string) (string, error) {
 		// gogcli 有時會回傳非 0 狀態碼但輸出有用的錯誤訊息
 		return fmt.Sprintf("執行失敗 (Code %v):\n%s", err, string(output)), nil
 	}
+
+	fmt.Println(string(output))
 
 	return string(output), nil
 }

@@ -173,7 +173,7 @@ func (m *SkillManager) restoreSkill(path string) error {
 
 	// 註冊
 	dynamicTool := skills.NewDynamicTool(def, m.Registry, m.DockerClient)
-	m.Registry.Register(dynamicTool)
+	m.Registry.RegisterWithPriority(dynamicTool, 10) // Skills 優先於 Tools
 
 	return nil
 }

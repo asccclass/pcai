@@ -51,9 +51,17 @@ func runChat(cmd *cobra.Command, args []string) {
 	// 初始化背景執行管理器(Background Manager)
 	bgMgr := tools.NewBackgroundManager()
 	GlobalBgMgr = bgMgr // 將實例交給全域指標，讓 health 指令讀得到
+
+	// 初始化 System Logger (在工具註冊前初始化，以便傳入 Adapter)
+	logger, err := agent.NewSystemLogger("botmemory")
+	if err != nil {
+		fmt.Printf("⚠️ [System] Failed to initialize system logger: %v\n", err)
+	} else {
+		defer logger.Close()
+	}
+
 	// 初始化工具
-	// 初始化工具
-	registry, cleanup := tools.InitRegistry(bgMgr, cfg, func() {
+	registry, cleanup := tools.InitRegistry(bgMgr, cfg, logger, func() {
 		// 當非同步任務(如Telegram)完成且有輸出時，補印提示符
 		fmt.Print("\n" + promptStr)
 	})
@@ -76,9 +84,9 @@ func runChat(cmd *cobra.Command, args []string) {
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("🚀 PCAI Agent 已啟動 ( I'm the assistant your terminal demanded, not the one your sleep schedule requested.)"))
 
 	// -------------------------------------------------------------
-	// 4. 初始化 Agent
+	// 5. 初始化 Agent
 	// -------------------------------------------------------------
-	myAgent := agent.NewAgent(modelName, systemPrompt, sess, registry)
+	myAgent := agent.NewAgent(modelName, systemPrompt, sess, registry, logger)
 
 	// 設定 UI 回調 (Bridging Agent Events -> CLI Glamour UI)
 	myAgent.OnGenerateStart = func() {

@@ -163,6 +163,37 @@ func (m *Manager) Count() int {
 	return len(m.entries)
 }
 
+// ListAll 回傳所有記憶條目的唯讀複本
+func (m *Manager) ListAll() []Entry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]Entry, len(m.entries))
+	copy(result, m.entries)
+	return result
+}
+
+// UpdateByID 根據 ID 更新記憶內容與標籤，重新計算 Hash 與 Vector
+func (m *Manager) UpdateByID(id string, content string, tags []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for i, entry := range m.entries {
+		if entry.ID == id {
+			hash := calculateHash(content)
+			vec, err := m.embedder.GetEmbedding(content)
+			if err != nil {
+				return err
+			}
+			m.entries[i].Content = content
+			m.entries[i].ContentHash = hash
+			m.entries[i].Tags = tags
+			m.entries[i].Vector = vec
+			return m.save()
+		}
+	}
+	return fmt.Errorf("記憶 ID %s 不存在", id)
+}
+
 // save 存檔
 func (m *Manager) save() error {
 	file, err := os.Create(m.filePath)

@@ -3,6 +3,7 @@ package calendar
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -65,7 +66,11 @@ type gogEventTime struct {
 // ListCalendars 列出所有可用的行事曆 (使用 gog CLI)
 func ListCalendars() ([]CalendarItem, error) {
 	// exec gog calendar calendars --json
-	cmd := exec.Command("gog", "calendar", "calendars", "--json")
+	gogPath := os.Getenv("GOG_PATH")
+	if gogPath == "" {
+		gogPath = "gog"
+	}
+	cmd := exec.Command(gogPath, "calendar", "calendars", "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
@@ -117,21 +122,30 @@ func FetchUpcomingEvents(calendarID string, timeMin string, maxResults int64) ([
 	fmt.Printf("🔍 [DEBUG] 正在呼叫 gog 抓取行事曆資料...\n")
 	fmt.Printf("🔍 [DEBUG] 查詢範圍: %s 到 %s\n", timeMin, timeMax)
 
-	// gog calendar events <calendarID> --from <timeMin> --to <timeMax> --json
-	// 注意: maxResults 雖然傳進來了，但因為我們要查「未來7天」，可能會有邏輯衝突。
-	// 但 gog 支援同時下 --max 和 --to，會取交集限制。
-	// 這裡我們保留 --max 限制以免爆量，但如果使用者希望「未來7天所有」，可能需要把 max 調大。
-	// 為了符合 "FetchUpcomingEvents" 的語意，我們還是加上 --max。
-	args := []string{"calendar", "events", calendarID,
+	// gog calendar events [<calendarID>] --from ... --to ... --json [--all]
+	// If calendarID is "all", use --all flag and omit calendarID arg.
+	args := []string{"calendar", "events"}
+
+	if calendarID == "all" {
+		args = append(args, "--all")
+	} else {
+		args = append(args, calendarID)
+	}
+
+	args = append(args,
 		"--from", timeMin,
 		"--to", timeMax,
-		"--json"}
+		"--json")
 
 	if maxResults > 0 {
 		args = append(args, "--max", fmt.Sprintf("%d", maxResults))
 	}
 
-	cmd := exec.Command("gog", args...)
+	gogPath := os.Getenv("GOG_PATH")
+	if gogPath == "" {
+		gogPath = "gog"
+	}
+	cmd := exec.Command(gogPath, args...)
 	fmt.Printf("🔍 [DEBUG] Executing: %s\n", cmd.String())
 
 	output, err := cmd.Output()

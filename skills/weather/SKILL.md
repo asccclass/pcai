@@ -1,7 +1,7 @@
 ---
 name: get_taiwan_weather
 description: 從 Google Sheets 資料庫中查詢台灣各縣市指定地區的目前及未來天氣預報。
-command: fetch_url "https://script.google.com/macros/s/AKfycbyR1nCx7yYQHgXOlZ5ko_ucbSeyJhDIp-PYxQ8rPDSdexz0I1LrDotZbvpBLZp6YpizYw/exec?location={{url:location}}"
+command: web_fetch "https://script.google.com/macros/s/AKfycbyR1nCx7yYQHgXOlZ5ko_ucbSeyJhDIp-PYxQ8rPDSdexz0I1LrDotZbvpBLZp6YpizYw/exec?location={{url:location}}"
 cache_duration: 3h
 options:
   location:
@@ -41,6 +41,12 @@ option_aliases:
     "內湖區": "臺北市"
     "南港區": "臺北市"
     "文山區": "臺北市"
+    "林口區": "新北市"
+    "林口": "新北市"
+    "淡水區": "新北市"
+    "淡水": "新北市"
+    "板橋區": "新北市"
+    "板橋": "新北市"
     "苗栗市": "苗栗縣"
     "彰化市": "彰化縣"
     "南投市": "南投縣"

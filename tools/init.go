@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asccclass/pcai/internal/agent"
 	"github.com/asccclass/pcai/internal/channel"
 	"github.com/asccclass/pcai/internal/config"
 	"github.com/asccclass/pcai/internal/core"
@@ -81,7 +82,7 @@ var DefaultRegistry = core.NewRegistry()
 
 // InitRegistry 初始化工具註冊表
 // InitRegistry 初始化工具註冊表, 回傳 Registry 和 Cleanup Function
-func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent func()) (*core.Registry, func()) {
+func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.SystemLogger, onAsyncEvent func()) (*core.Registry, func()) {
 	home, _ := os.Getwd() // 程式碼根目錄
 
 	// 建立 Ollama API 客戶端
@@ -215,6 +216,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	// 建立 Manager
 	memManager := memory.NewManager(jsonPath, embedder)
 
+	// 建立 PendingStore (暫存待確認記憶，30 分鐘過期)
+	pendingStore := memory.NewPendingStore(30 * time.Minute)
+
 	// SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
 	fmt.Println("✅ [Scheduler] 正在初始化記憶庫同步...")
 	SyncMemory(memManager, mdPath)
@@ -280,6 +284,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(&VideoConverterTool{})
 	registry.Register(&EmailTool{})
 	registry.Register(NewGoogleTool())
+	registry.Register(&GitAutoCommitTool{}) // Git 自動提交工具
 
 	// Python Sandbox Tool
 	if pyTool, err := NewPythonSandboxTool(workspacePath, home); err != nil {
@@ -289,8 +294,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	}
 
 	// 記憶相關工具
-	registry.Register(NewMemoryTool(memManager))             // 搜尋工具
-	registry.Register(NewMemorySaveTool(memManager, mdPath)) // 儲存工具 (存入 Markdown)
+	registry.Register(NewMemoryTool(memManager))                              // 搜尋工具
+	registry.Register(NewMemorySaveTool(memManager, pendingStore, mdPath))    // 儲存工具 (暫存待確認)
+	registry.Register(NewMemoryConfirmTool(memManager, pendingStore, mdPath)) // 確認/拒絕工具
 	// 遺忘工具 (注入 memManager, schedMgr, mdPath)	// 這樣它才能同時操作資料庫並排程刪除檔案
 	registry.Register(NewMemoryForgetTool(memManager, schedMgr, mdPath))
 
@@ -312,9 +318,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	registry.Register(&FsAppendFileTool{Manager: fsManager})
 
 	// --- 可繼續新增：相關技能工具 ---
-	// 新增 Advisor Skill
+	// 新增 Advisor Skill (高優先級)
 	advisorSkill := skills.NewAdvisorSkill(client, cfg.Model)
-	registry.Register(advisorSkill.CreateTool())
+	registry.RegisterWithPriority(advisorSkill.CreateTool(), 10)
 
 	// [NEW] 載入動態技能 (skills.md)
 	// 初始化 Docker Client (分享給所有 Dynamic Skills)
@@ -342,8 +348,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	} else {
 		for _, ds := range dynamicSkills {
 			toolStr := skills.NewDynamicTool(ds, registry, dockerCli)
-			registry.Register(toolStr)
-			fmt.Printf("✅ [Skills] Loaded: %s (%s)\n", ds.Name, ds.Description)
+			registry.RegisterWithPriority(toolStr, 10) // Skills 優先於 Tools
+			fmt.Printf("✅ [Skills] Loaded (priority): %s (%s)\n", ds.Name, ds.Description)
 		}
 	}
 
@@ -362,7 +368,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, onAsyncEvent fun
 	// [FIX] 移動到這裡，確保 registry 已經註冊完所有工具
 	if cfg.TelegramToken != "" {
 		// 1. 建立 Agent Adapter
-		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt, cfg.TelegramDebug)
+		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt, cfg.TelegramDebug, logger)
 
 		// 2. 建立 Dispatcher
 		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)

@@ -24,13 +24,13 @@ func (t *SchedulerTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        t.Name(),
-			Description: "設定或取消定時背景任務。例如『每天早上8點讀取郵件』或『取消讀取郵件的任務』。時間需轉換為 Cron 格式 (分 時 日 月 週)。",
+			Description: "僅用於設定或取消「定時排程」背景任務。例如『每天早上8點讀取郵件』。注意：若使用者只是要「查看今天行事曆」或「讀取郵件」，請直接使用 read_calendars 或 read_email 工具，不要使用此排程工具。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
 					"action": {
 						"type": "string",
-						"description": "執行動作: 'add' (新增/更新), 'remove' (移除), 'run_once' (立即執行)",
+						"description": "執行動作: 'add' (新增/更新排程), 'remove' (移除排程), 'run_once' (立即執行已存在的排程任務)",
 						"enum": ["add", "remove", "run_once"]
 					},
 					"cron_expression": {
@@ -39,12 +39,12 @@ func (t *SchedulerTool) Definition() api.Tool {
 					},
 					"task_type": {
 						"type": "string",
-						"description": "執行的任務類型",
+						"description": "排程的任務類型（僅用於排程設定，不代表直接執行）",
 						"enum": ["read_email", "read_calendars"]
 					},
 					"task_name": {
 						"type": "string",
-						"description": "任務的簡短名稱 (ID)，如 'morning_check'。 run_once 必填。"
+						"description": "任務的簡短名稱 (ID)，如 'morning_check'。"
 					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)

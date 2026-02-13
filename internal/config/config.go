@@ -20,6 +20,7 @@ type Config struct {
 	TelegramToken   string
 	TelegramAdminID string
 	TelegramDebug   bool
+	GOGPath         string
 }
 
 func getEnvBool(key string, fallback bool) bool {
@@ -96,5 +97,6 @@ func LoadConfig() *Config {
 		TelegramToken:   getEnv("TELEGRAM_TOKEN", ""),
 		TelegramAdminID: getEnv("TELEGRAM_ADMIN_ID", ""),
 		TelegramDebug:   getEnvBool("TELEGRAM_DEBUG", false),
+		GOGPath:         getEnv("GOG_PATH", filepath.Join(home, "bin", "gog.exe")),
 	}
 }

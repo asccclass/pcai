@@ -1,10 +1,9 @@
-// 主動學習 (新增記憶工具)
+// 主動學習 (新增記憶工具) — 需要使用者確認後才寫入
 package tools
 
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/asccclass/pcai/internal/memory"
@@ -13,12 +12,14 @@ import (
 
 type MemorySaveTool struct {
 	manager      *memory.Manager
+	pending      *memory.PendingStore
 	markdownPath string // 原始檔案路徑，用於附加寫入
 }
 
-func NewMemorySaveTool(m *memory.Manager, mdPath string) *MemorySaveTool {
+func NewMemorySaveTool(m *memory.Manager, ps *memory.PendingStore, mdPath string) *MemorySaveTool {
 	return &MemorySaveTool{
 		manager:      m,
+		pending:      ps,
 		markdownPath: mdPath,
 	}
 }
@@ -32,7 +33,7 @@ func (t *MemorySaveTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        "memory_save",
-			Description: "用於儲存重要資訊。當使用者要求你「記住」某事，或提供了新的個人資訊、專案細節時，使用此工具將其永久保存。",
+			Description: "用於儲存重要資訊。當使用者要求你「記住」某事，或提供了新的個人資訊、專案細節時，使用此工具將其暫存。注意：記憶不會立即寫入，需要等使用者確認後才會永久保存。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
@@ -65,24 +66,17 @@ func (t *MemorySaveTool) Run(argsJSON string) (string, error) {
 		return "內容不能為空", nil
 	}
 
-	// 1. 更新執行中的記憶庫 (Vector Store)
-	// 這會即時生效，AI 下一句話就能檢索到
-	if err := t.manager.Add(args.Content, []string{"user_created"}); err != nil {
-		return "", fmt.Errorf("寫入記憶庫失敗: %w", err)
+	// 暫存到 PendingStore，等待使用者確認
+	pendingID := t.pending.Add(args.Content, []string{"user_created"})
+
+	// 回傳提示訊息，讓 AI 告知使用者需要確認
+	preview := args.Content
+	if len(preview) > 80 {
+		preview = preview[:80] + "..."
 	}
 
-	// 2. (選用) 同步寫入 Markdown 檔案 (File-First)
-	// 這樣下次重啟程式時，資料還會在
-	if t.markdownPath != "" {
-		f, err := os.OpenFile(t.markdownPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err == nil {
-			defer f.Close()
-			// 寫入格式：空行 + 內容
-			if _, err := f.WriteString("\n\n" + args.Content); err != nil {
-				fmt.Printf("警告: 無法寫入 Markdown 檔案: %v\n", err)
-			}
-		}
-	}
-
-	return fmt.Sprintf("已成功記住: \"%s\"", args.Content), nil
+	return fmt.Sprintf(
+		"📝 記憶已暫存，等待確認 (ID: %s)\n內容預覽: \"%s\"\n\n請詢問使用者是否確認儲存。使用者確認後，請呼叫 memory_confirm 工具執行 confirm 操作。",
+		pendingID, preview,
+	), nil
 }

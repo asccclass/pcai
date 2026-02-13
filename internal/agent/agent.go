@@ -19,17 +19,18 @@ type Agent struct {
 	SystemPrompt string
 	Registry     *core.Registry
 	Options      ollama.Options
-	Provider     llms.ChatStreamFunc // [NEW] 抽象化的 Provider
+	Provider     llms.ChatStreamFunc
+	Logger       *SystemLogger // [NEW] 系統日誌
 
 	// Callbacks for UI interaction
 	OnGenerateStart        func()
 	OnModelMessageComplete func(content string)
 	OnToolCall             func(name, args string)
-	OnToolResult           func(result string) // [NEW] 工具執行結果回調
+	OnToolResult           func(result string)
 }
 
 // NewAgent 建立一個新的 Agent 實例
-func NewAgent(modelName, systemPrompt string, session *history.Session, registry *core.Registry) *Agent {
+func NewAgent(modelName, systemPrompt string, session *history.Session, registry *core.Registry, logger *SystemLogger) *Agent {
 	// 預設使用 Ollama
 	defaultProvider, _ := llms.GetProviderFunc("ollama")
 
@@ -40,6 +41,7 @@ func NewAgent(modelName, systemPrompt string, session *history.Session, registry
 		Registry:     registry,
 		Options:      ollama.Options{Temperature: 0.7, TopP: 0.9},
 		Provider:     defaultProvider,
+		Logger:       logger,
 	}
 }
 
@@ -56,8 +58,19 @@ func (a *Agent) SetModelConfig(modelName string, provider llms.ChatStreamFunc) {
 // Chat 處理使用者輸入，執行思考與工具呼叫迴圈
 // onStream 是即時輸出 AI 回應的回調函式
 func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
+	// [LOG] 記錄使用者輸入
+	if a.Logger != nil {
+		a.Logger.LogUserInput(input)
+	}
+
+	// [TOOL HINT] 根據關鍵字注入工具提示，引導 LLM 選擇正確工具
+	userContent := input
+	if hint := getToolHint(input); hint != "" {
+		userContent = input + "\n\n" + hint
+	}
+
 	// 將使用者輸入加入對話歷史
-	a.Session.Messages = append(a.Session.Messages, ollama.Message{Role: "user", Content: input})
+	a.Session.Messages = append(a.Session.Messages, ollama.Message{Role: "user", Content: userContent})
 
 	var finalResponse string
 
@@ -90,6 +103,10 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		)
 
 		if err != nil {
+			// [LOG] 記錄錯誤
+			if a.Logger != nil {
+				a.Logger.LogError("AI 思考錯誤", err)
+			}
 			return "", fmt.Errorf("AI 思考錯誤: %v", err)
 		}
 
@@ -151,6 +168,10 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			if a.OnModelMessageComplete != nil {
 				a.OnModelMessageComplete(finalResponse)
 			}
+			// [LOG] 記錄 AI 回應
+			if a.Logger != nil {
+				a.Logger.LogAIResponse(finalResponse)
+			}
 		}
 
 		// 將 AI 回應加入歷史 (移到處理完 Content 之後)
@@ -166,12 +187,22 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			argsJSON, _ := json.Marshal(tc.Function.Arguments)
 			argsStr := string(argsJSON)
 
+			// [LOG] 記錄工具呼叫
+			if a.Logger != nil {
+				a.Logger.LogToolCall(tc.Function.Name, argsStr)
+			}
+
 			// 觸發工具呼叫回調 (供 UI 顯示 "Executing..." 提示)
 			if a.OnToolCall != nil {
 				a.OnToolCall(tc.Function.Name, argsStr)
 			}
 
 			result, toolErr := a.Registry.CallTool(tc.Function.Name, argsStr)
+
+			// [LOG] 記錄工具結果
+			if a.Logger != nil {
+				a.Logger.LogToolResult(tc.Function.Name, result, toolErr)
+			}
 
 			// --- 強化背景執行的反饋 ---
 			var toolFeedback string

@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCAI Memory Manager</title>
+    <meta name="description" content="PCAI 記憶管理後台 — 管理 AI 記憶資料的 CRUD 介面">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.7);
+            --bg-glass: rgba(255, 255, 255, 0.04);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(99, 102, 241, 0.3);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #6366f1;
+            --accent-light: #818cf8;
+            --accent-glow: rgba(99, 102, 241, 0.15);
+            --success: #10b981;
+            --danger: #ef4444;
+            --danger-hover: #dc2626;
+            --warning: #f59e0b;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Background gradient orbs */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -200px;
+            right: -200px;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: -200px;
+            left: -200px;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* =================== Header =================== */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 28px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            backdrop-filter: blur(20px);
+            margin-bottom: 24px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .header-logo {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .header h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .header h1 span {
+            color: var(--accent-light);
+        }
+
+        .stat-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--accent-glow);
+            border: 1px solid var(--border-glow);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--accent-light);
+        }
+
+        .stat-badge .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        /* =================== Create Section =================== */
+        .create-section {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            backdrop-filter: blur(20px);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .create-section h2 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        textarea,
+        input[type="text"] {
+            width: 100%;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            transition: border-color var(--transition);
+            resize: vertical;
+        }
+
+        textarea:focus,
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        textarea {
+            min-height: 100px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+
+        /* =================== Buttons =================== */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition);
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #7c3aed);
+            color: white;
+            box-shadow: 0 2px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.78rem;
+        }
+
+        .btn-edit {
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--accent-light);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        .btn-edit:hover {
+            background: rgba(99, 102, 241, 0.22);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-ghost:hover {
+            background: var(--bg-glass);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* =================== Entry Cards =================== */
+        .entries-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .entries-header h2 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .search-box {
+            position: relative;
+        }
+
+        .search-box input {
+            width: 260px;
+            padding: 8px 14px 8px 36px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.8rem;
+        }
+
+        .entries-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .entry-card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            transition: all var(--transition);
+            backdrop-filter: blur(12px);
+        }
+
+        .entry-card:hover {
+            border-color: var(--border-glow);
+            box-shadow: 0 2px 16px rgba(99, 102, 241, 0.06);
+        }
+
+        .entry-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+
+        .entry-id {
+            font-family: 'Courier New', monospace;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            background: var(--bg-secondary);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .entry-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .entry-content {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            line-height: 1.7;
+            margin-bottom: 12px;
+            word-break: break-word;
+            white-space: pre-wrap;
+        }
+
+        .entry-content.truncated {
+            max-height: 80px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .entry-content.truncated::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            background: linear-gradient(transparent, var(--bg-card));
+        }
+
+        .entry-bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            font-size: 0.72rem;
+            font-weight: 500;
+            padding: 3px 10px;
+            border-radius: 12px;
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent-light);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+        }
+
+        .actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        .empty-state p {
+            font-size: 0.9rem;
+        }
+
+        /* =================== Modal =================== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 28px;
+            width: 90%;
+            max-width: 560px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: modalIn 0.2s ease-out;
+        }
+
+        @keyframes modalIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .modal h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        /* =================== Toast =================== */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            padding: 12px 20px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 500;
+            animation: toastIn 0.3s ease-out;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .toast.success {
+            background: var(--success);
+            color: white;
+        }
+
+        .toast.error {
+            background: var(--danger);
+            color: white;
+        }
+
+        @keyframes toastIn {
+            from {
+                opacity: 0;
+                transform: translateX(40px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* =================== Loading =================== */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            color: var(--text-muted);
+            gap: 10px;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .header {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .form-row {
+                flex-direction: column;
+            }
+
+            .search-box input {
+                width: 100%;
+            }
+
+            .entries-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <div class="header-logo">🧠</div>
+                <h1>PCAI <span>Memory</span> Manager</h1>
+            </div>
+            <div class="stat-badge">
+                <span class="dot"></span>
+                <span id="totalCount">載入中...</span>
+            </div>
+        </div>
+
+        <!-- Create -->
+        <div class="create-section">
+            <h2>➕ 新增記憶</h2>
+            <div class="form-group">
+                <label>內容 Content</label>
+                <textarea id="createContent" placeholder="輸入記憶內容..."></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>標籤 Tags（逗號分隔）</label>
+                    <input type="text" id="createTags" placeholder="例如: work, idea, todo">
+                </div>
+                <button class="btn btn-primary" id="createBtn" onclick="createEntry()">
+                    <span>新增</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Entries -->
+        <div class="entries-header">
+            <h2>📋 記憶列表</h2>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="搜尋記憶..." oninput="filterEntries()">
+            </div>
+        </div>
+
+        <div id="entriesList" class="entries-list">
+            <div class="loading">
+                <div class="spinner"></div>載入中...
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <h3>✏️ 編輯記憶</h3>
+            <input type="hidden" id="editId">
+            <div class="form-group">
+                <label>內容 Content</label>
+                <textarea id="editContent"></textarea>
+            </div>
+            <div class="form-group">
+                <label>標籤 Tags（逗號分隔）</label>
+                <input type="text" id="editTags">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+                <button class="btn btn-primary" onclick="updateEntry()">儲存變更</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirm Modal -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal">
+            <h3>⚠️ 確認刪除</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 8px;">確定要刪除這筆記憶嗎？此操作無法復原。</p>
+            <p id="deletePreview"
+                style="font-size: 0.85rem; color: var(--text-muted); background: var(--bg-primary); padding: 10px; border-radius: 6px; max-height: 80px; overflow: hidden;">
+            </p>
+            <input type="hidden" id="deleteId">
+            <div class="modal-actions">
+                <button class="btn btn-ghost" onclick="closeDeleteModal()">取消</button>
+                <button class="btn btn-danger" onclick="confirmDelete()">確認刪除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        const API = '/api/memory';
+        let allEntries = [];
+
+        // =================== API ===================
+        async function fetchEntries() {
+            try {
+                const res = await fetch(API);
+                const data = await res.json();
+                allEntries = data.entries || [];
+                document.getElementById('totalCount').textContent = `共 ${data.count} 筆記憶`;
+                renderEntries(allEntries);
+            } catch (e) {
+                showToast('載入失敗: ' + e.message, 'error');
+            }
+        }
+
+        async function createEntry() {
+            const content = document.getElementById('createContent').value.trim();
+            const tagsStr = document.getElementById('createTags').value.trim();
+            if (!content) { showToast('請輸入內容', 'error'); return; }
+
+            const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+            const btn = document.getElementById('createBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> 處理中...';
+
+            try {
+                const res = await fetch(API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, tags })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || '新增失敗');
+                }
+                document.getElementById('createContent').value = '';
+                document.getElementById('createTags').value = '';
+                showToast('✅ 記憶已新增', 'success');
+                fetchEntries();
+            } catch (e) {
+                showToast(e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>新增</span>';
+            }
+        }
+
+        async function updateEntry() {
+            const id = document.getElementById('editId').value;
+            const content = document.getElementById('editContent').value.trim();
+            const tagsStr = document.getElementById('editTags').value.trim();
+            if (!content) { showToast('內容不可為空', 'error'); return; }
+
+            const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+            try {
+                const res = await fetch(`${API}/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, tags })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || '更新失敗');
+                }
+                closeModal();
+                showToast('✅ 記憶已更新', 'success');
+                fetchEntries();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        }
+
+        async function confirmDelete() {
+            const id = document.getElementById('deleteId').value;
+            try {
+                const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || '刪除失敗');
+                }
+                closeDeleteModal();
+                showToast('✅ 記憶已刪除', 'success');
+                fetchEntries();
+            } catch (e) {
+                showToast(e.message, 'error');
+            }
+        }
+
+        // =================== Render ===================
+        function escapeHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str || '';
+            return d.innerHTML;
+        }
+
+        function renderEntries(entries) {
+            const list = document.getElementById('entriesList');
+            if (!entries || entries.length === 0) {
+                list.innerHTML = `
+            <div class="empty-state">
+                <div class="icon">🫙</div>
+                <p>目前沒有記憶資料</p>
+            </div>`;
+                return;
+            }
+
+            list.innerHTML = entries.map((e, idx) => {
+                const tagsHtml = (e.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
+                const needsTruncate = e.content.length > 200;
+                const contentClass = needsTruncate ? 'entry-content truncated' : 'entry-content';
+
+                return `
+        <div class="entry-card">
+            <div class="entry-top">
+                <span class="entry-id">${escapeHtml(e.id)}</span>
+                <span class="entry-time">${escapeHtml(e.timestamp)}</span>
+            </div>
+            <div class="${contentClass}" style="cursor:pointer" data-toggle-truncate>${escapeHtml(e.content)}</div>
+            <div class="entry-bottom">
+                <div class="tags">${tagsHtml}</div>
+                <div class="actions">
+                    <button class="btn btn-edit btn-sm" data-action="edit" data-index="${idx}">✏️ 編輯</button>
+                    <button class="btn btn-danger btn-sm" data-action="delete" data-index="${idx}">🗑️ 刪除</button>
+                </div>
+            </div>
+        </div>`;
+            }).join('');
+        }
+
+        // =================== Event Delegation ===================
+        document.getElementById('entriesList').addEventListener('click', function (e) {
+            // Handle truncate toggle
+            const toggleEl = e.target.closest('[data-toggle-truncate]');
+            if (toggleEl) {
+                toggleEl.classList.toggle('truncated');
+                return;
+            }
+
+            // Handle edit/delete buttons
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+
+            const action = btn.dataset.action;
+            const index = parseInt(btn.dataset.index, 10);
+
+            // Use the currently displayed entries (could be filtered)
+            const searchVal = document.getElementById('searchInput').value.toLowerCase();
+            let currentEntries = allEntries;
+            if (searchVal) {
+                currentEntries = allEntries.filter(entry =>
+                    entry.content.toLowerCase().includes(searchVal) ||
+                    (entry.tags || []).some(t => t.toLowerCase().includes(searchVal)) ||
+                    entry.id.toLowerCase().includes(searchVal)
+                );
+            }
+
+            const entry = currentEntries[index];
+            if (!entry) return;
+
+            if (action === 'edit') {
+                openEditModal(entry.id, entry.content, (entry.tags || []).join(', '));
+            } else if (action === 'delete') {
+                openDeleteModal(entry.id, entry.content);
+            }
+        });
+
+        function filterEntries() {
+            const q = document.getElementById('searchInput').value.toLowerCase();
+            if (!q) { renderEntries(allEntries); return; }
+            const filtered = allEntries.filter(e =>
+                e.content.toLowerCase().includes(q) ||
+                (e.tags || []).some(t => t.toLowerCase().includes(q)) ||
+                e.id.toLowerCase().includes(q)
+            );
+            renderEntries(filtered);
+        }
+
+        // =================== Modal ===================
+        function openEditModal(id, content, tags) {
+            document.getElementById('editId').value = id;
+            document.getElementById('editContent').value = content;
+            document.getElementById('editTags').value = tags;
+            document.getElementById('editModal').classList.add('active');
+        }
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('active');
+        }
+
+        function openDeleteModal(id, content) {
+            document.getElementById('deleteId').value = id;
+            document.getElementById('deletePreview').textContent = content.length > 120 ? content.substring(0, 120) + '...' : content;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+        }
+
+        // =================== Toast ===================
+        function showToast(msg, type = 'success') {
+            const c = document.getElementById('toastContainer');
+            const t = document.createElement('div');
+            t.className = `toast ${type}`;
+            t.textContent = msg;
+            c.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; }, 2500);
+            setTimeout(() => t.remove(), 3000);
+        }
+
+        // Close modal on overlay click
+        document.getElementById('editModal').addEventListener('click', function (e) {
+            if (e.target === this) closeModal();
+        });
+        document.getElementById('deleteModal').addEventListener('click', function (e) {
+            if (e.target === this) closeDeleteModal();
+        });
+
+        // =================== Init ===================
+        fetchEntries();
+    </script>
+</body>
+
+</html>

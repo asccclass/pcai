@@ -53,68 +53,105 @@ func (t *EmailTool) Definition() api.Tool {
 }
 
 func (t *EmailTool) Run(args string) (string, error) {
-	var a EmailToolArgs
+	// Parse into map[string]interface{} to handle wrapped values
+	var rawArgs map[string]interface{}
 	if args != "" {
-		_ = json.Unmarshal([]byte(args), &a)
+		if err := json.Unmarshal([]byte(args), &rawArgs); err != nil {
+			// Fallback: try unmarshalling into struct or just log?
+			// Actually if it's a valid JSON object it should work.
+			// But if args is just a string? args is JSON string.
+		}
 	}
-	if a.MaxResults <= 0 {
-		a.MaxResults = 5
+
+	// Extract values
+	query := ToString(rawArgs["query"])
+	// MaxResults is int in struct. ToString handles numbers gracefully?
+	// ToString returns "5" for int 5. We need Atoi or helper.
+	// Let's rely on fmt.Sprintf in ToString for now, then Atoi.
+	maxResultsStr := ToString(rawArgs["max_results"])
+	maxResults := 5
+	if maxResultsStr != "" {
+		// Try parsing
+		var val int
+		if _, err := fmt.Sscanf(maxResultsStr, "%d", &val); err == nil {
+			maxResults = val
+		}
+	}
+
+	if maxResults <= 0 {
+		maxResults = 5
+	}
+
+	a := EmailToolArgs{
+		Query:      query,
+		MaxResults: maxResults,
 	}
 
 	// 1. 決定 gog 執行檔路徑
-	binName := "gog"
-	if runtime.GOOS == "windows" {
-		binName = "gog.exe"
-	}
-	cwd, _ := os.Getwd()
-
-	// 優先順序:
-	// 1. 當前目錄下的 bin/gog.exe
-	// 2. 使用者家目錄下的 go/bin/gog.exe (常見 Go 安裝位置)
-	// 3. 系統 PATH
-
-	possiblePaths := []string{
-		filepath.Join(cwd, "bin", binName),
-	}
-
-	// 嘗試從環境變數 USERPROFILE 組合路徑
-	if home := os.Getenv("USERPROFILE"); home != "" {
-		possiblePaths = append(possiblePaths, filepath.Join(home, "go", "bin", binName))
-	}
-	// 嘗試 GOPATH
-	if goPath := os.Getenv("GOPATH"); goPath != "" {
-		possiblePaths = append(possiblePaths, filepath.Join(goPath, "bin", binName))
-	}
-
-	var binPath string
+	binPath := os.Getenv("GOG_PATH")
 	found := false
-	for _, p := range possiblePaths {
-		if _, err := os.Stat(p); err == nil {
-			binPath = p
+
+	// Check if configured path exists
+	if binPath != "" {
+		if _, err := os.Stat(binPath); err == nil {
 			found = true
-			break
 		}
 	}
 
 	if !found {
-		// Fallback to PATH lookup
-		if path, err := exec.LookPath(binName); err == nil {
-			binPath = path
-		} else {
-			binPath = binName // Last resort
+		binName := "gog"
+		if runtime.GOOS == "windows" {
+			binName = "gog.exe"
+		}
+		cwd, _ := os.Getwd()
+
+		// 優先順序:
+		// 1. 當前目錄下的 bin/gog.exe
+		// 2. 使用者家目錄下的 go/bin/gog.exe (常見 Go 安裝位置)
+		// 3. 系統 PATH
+
+		possiblePaths := []string{
+			filepath.Join(cwd, "bin", binName),
+		}
+
+		// 嘗試從環境變數 USERPROFILE 組合路徑
+		if home := os.Getenv("USERPROFILE"); home != "" {
+			possiblePaths = append(possiblePaths, filepath.Join(home, "go", "bin", binName))
+		}
+		// 嘗試 GOPATH
+		if goPath := os.Getenv("GOPATH"); goPath != "" {
+			possiblePaths = append(possiblePaths, filepath.Join(goPath, "bin", binName))
+		}
+
+		for _, p := range possiblePaths {
+			if _, err := os.Stat(p); err == nil {
+				binPath = p
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			// Fallback to PATH lookup
+			if path, err := exec.LookPath(binName); err == nil {
+				binPath = path
+			} else {
+				binPath = binName // Last resort
+			}
 		}
 	}
 
 	// 2. 組建指令
-	// gog gmail list --limit N (若無 query)
-	// gog gmail search "query" --limit N (若有 query)
+	// gog gmail search "query" --limit N
+	// 若無 query 則預設搜尋 "is:inbox" (收件匣)
 	var cmdArgs []string
-	cmdArgs = append(cmdArgs, "gmail")
+	cmdArgs = append(cmdArgs, "gmail", "search")
 
 	if a.Query != "" {
-		cmdArgs = append(cmdArgs, "search", a.Query)
+		cmdArgs = append(cmdArgs, a.Query)
 	} else {
-		cmdArgs = append(cmdArgs, "list")
+		// Default to inbox if no query provided
+		cmdArgs = append(cmdArgs, "is:inbox")
 	}
 
 	cmdArgs = append(cmdArgs, "--limit", fmt.Sprintf("%d", a.MaxResults))

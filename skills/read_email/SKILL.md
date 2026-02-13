@@ -5,6 +5,7 @@ metadata:
   pcai:
     requires:
       bins: ["gog"]
+      env: ["GOG_PATH"]
 ---
 
 # Email Reader Skill
@@ -12,7 +13,7 @@ metadata:
 
 ## Capabilities
 
-1.  **List Emails**: 列出最近的郵件。
+1.  **List Emails**: 列出最近的郵件 (使用 search).
 2.  **Read Email**: 讀取特定郵件的詳細內容。
 3.  **Search Emails**: 搜尋特定郵件。
 
@@ -22,7 +23,7 @@ metadata:
 
 1.  **檢查狀態**：確認 `gog` 工具是否可用。
 2.  **列出郵件**：
-    - 使用指令 `gog gmail list --limit 10` 來獲取最近的 10 封郵件列表（包含 ID 和標題）。
+    - 使用指令 `gog gmail search "is:inbox" --limit 10` 來獲取最近的 10 封郵件列表（包含 ID 和標題）。
     - **注意**：不要一次讀取「所有」內容，這會超出 Context Window (記憶體限制)。先列出標題讓使用者選，或只讀取最新的。
 3.  **讀取內容**：
     - 如果使用者想看特定郵件，使用 `gog gmail get <message_id>`。
@@ -32,7 +33,7 @@ metadata:
 ## Examples
 
 User: "看看我有什麼新信"
-Agent Action: run `gog gmail list --limit 5`
+Agent Action: run `gog gmail search "is:inbox" --limit 5`
 
 User: "讀取關於 '發票' 的那封信"
 Agent Action:

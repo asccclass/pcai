@@ -13,26 +13,27 @@ import (
 )
 
 // AgentAdapter 負責管理多個 Telegram 使用者的 Agent 實例
-// AgentAdapter 負責管理多個 Telegram 使用者的 Agent 實例
 type AgentAdapter struct {
 	agents       map[string]*agent.Agent
 	registry     *core.Registry
 	modelName    string
 	systemPrompt string
 	mu           sync.Mutex
-	router       *Router // [NEW] 引入路由
-	debug        bool    // [NEW] Debug 旗標
+	router       *Router
+	debug        bool
+	logger       *agent.SystemLogger // [NEW] 共用日誌
 }
 
 // NewAgentAdapter 建立新的 Adapter
-func NewAgentAdapter(registry *core.Registry, modelName, systemPrompt string, debug bool) *AgentAdapter {
+func NewAgentAdapter(registry *core.Registry, modelName, systemPrompt string, debug bool, logger *agent.SystemLogger) *AgentAdapter {
 	return &AgentAdapter{
 		agents:       make(map[string]*agent.Agent),
 		registry:     registry,
 		modelName:    modelName,
 		systemPrompt: systemPrompt,
-		router:       NewRouter(modelName), // 初始化路由，並以傳入的 model 作為預設
+		router:       NewRouter(modelName),
 		debug:        debug,
+		logger:       logger,
 	}
 }
 
@@ -54,7 +55,6 @@ func (a *AgentAdapter) Process(env channel.Envelope) string {
 		myAgent.SetModelConfig(routeResult.ModelName, routeResult.Provider)
 	}
 
-	// 呼叫 Agent 進行對話
 	// 呼叫 Agent 進行對話
 	if a.debug {
 		fmt.Printf("[Telegram DEBUG] (%s) Sending prompt to Agent: %s\n", sessionID, env.Content)
@@ -126,16 +126,12 @@ func (a *AgentAdapter) getOrCreateAgent(sessionID string) *agent.Agent {
 
 	// 如果是新 Session (只有 ID)，補上 System Prompt
 	if len(session.Messages) == 0 {
-		// 這裡必須注入 System Prompt，否則 Telegram 用戶無法得知工具定義與使用規範
 		session.Messages = append(session.Messages, ollama.Message{Role: "system", Content: a.systemPrompt})
 	}
-	// [Note] NewAgent 內部不會自動加 System Prompt 到 Messages，它只是存起來
-	// 真正決定是否加 System Prompt 是在 Session 初始化階段
 
 	// 建立 Agent
-	newAgent := agent.NewAgent(a.modelName, a.systemPrompt, session, a.registry)
+	newAgent := agent.NewAgent(a.modelName, a.systemPrompt, session, a.registry, a.logger)
 
-	// 設定 Callbacks (為了 debug)
 	// 設定 Callbacks (為了 debug)
 	if a.debug {
 		newAgent.OnToolCall = func(name, args string) {
