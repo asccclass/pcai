@@ -359,6 +359,10 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		BaseDir: skillsDir,
 	})
 
+	// 註冊 Skill 骨架產生器 & 規格驗證器
+	registry.Register(&SkillScaffoldTool{SkillsDir: skillsDir})
+	registry.Register(&SkillValidateTool{SkillsDir: skillsDir})
+
 	// [FIX] 註冊 read_email 任務類型 (解決 Scheduler Warning)
 	schedMgr.RegisterTaskType("read_email", func() {
 		// 預設參數: 查閱未讀信件
