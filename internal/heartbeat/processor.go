@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -77,6 +78,7 @@ func NewPCAIBrain(db *database.DB, ollamaURL, modelName, tgToken, tgChatID strin
 	return brain
 }
 
+// 這是 Heartbeat 決策系統 的「信任名單」— 讓 AI 判斷收到訊息時，哪些人需要緊急處理、哪些可以忽略。
 func (b *PCAIBrain) getTrustList() map[string]ContactInfo {
 	// 實務上這應該從你的 SQLite 或設定檔讀取
 	return map[string]ContactInfo{
@@ -89,6 +91,7 @@ func (b *PCAIBrain) getTrustList() map[string]ContactInfo {
 func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput string) (*IntentResponse, error) {
 	systemPrompt := `
 你是 PCAI 意圖解析助理。請分析用戶輸入並回傳 JSON 格式。
+當前作業系統: %s
 
 支援的意圖 (Intent)：
 1. SET_FILTER: 當用戶想忽略、過濾、或標記某號碼/關鍵字為重要時。
@@ -96,9 +99,10 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 2. CHAT: 一般聊天或詢問。
 3. TOOL_USE: 當用戶要求執行特定任務（如列出檔案、讀取網頁、查詢知識庫）。
    - params 需包含: "tool" (工具名稱), "args" (JSON 物件或 JSON 字串)
+   - 重要：列出檔案請優先使用 fs_list_dir (跨平台)，而非 shell_exec。
+   - 若必須使用 shell_exec，請根據作業系統選擇正確的指令 (Windows: dir, del, copy; Linux/Mac: ls, rm, cp)。
    - 支援工具列表與詳細參數定義如下:
 %s
-
 
 範例輸入：「請幫我列出當前目錄的檔案」
 範例輸出：{"intent": "TOOL_USE", "params": {"tool": "fs_list_dir", "args": {"path": "."}}, "reply": "好的，正在為您列出檔案。"}
@@ -110,7 +114,7 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 	if b.tools != nil {
 		toolPrompt = b.tools.GetToolPrompt()
 	}
-	formattedPrompt := fmt.Sprintf(systemPrompt, toolPrompt, userInput)
+	formattedPrompt := fmt.Sprintf(systemPrompt, runtime.GOOS, toolPrompt, userInput)
 
 	// 呼叫 Ollama API (使用 go-resty)
 	var result struct {
@@ -155,9 +159,11 @@ func (b *PCAIBrain) CollectEnv(ctx context.Context) string {
 
 	// A. 載入資料庫中的自訂過濾規則 (自我學習的成果)
 	rules, _ := b.DB.GetFilters(ctx)
-	sb.WriteString("### 自訂過濾規則 ###\n")
-	for _, r := range rules {
-		sb.WriteString(fmt.Sprintf("- 模式: %s -> 處理: %s\n", r["pattern"], r["action"]))
+	if len(rules) > 0 {
+		sb.WriteString("### 自訂過濾規則 ###\n")
+		for _, r := range rules {
+			sb.WriteString(fmt.Sprintf("- 模式: %s -> 處理: %s\n", r["pattern"], r["action"]))
+		}
 	}
 
 	/*

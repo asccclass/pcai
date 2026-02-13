@@ -14,14 +14,15 @@ import (
 
 // AgentAdapter 負責管理多個 Telegram 使用者的 Agent 實例
 type AgentAdapter struct {
-	agents       map[string]*agent.Agent
-	registry     *core.Registry
-	modelName    string
-	systemPrompt string
-	mu           sync.Mutex
-	router       *Router
-	debug        bool
-	logger       *agent.SystemLogger // [NEW] 共用日誌
+	agents            map[string]*agent.Agent
+	registry          *core.Registry
+	modelName         string
+	systemPrompt      string
+	mu                sync.Mutex
+	router            *Router
+	debug             bool
+	logger            *agent.SystemLogger          // 共用日誌
+	onShortTermMemory func(source, content string) // 短期記憶回調
 }
 
 // NewAgentAdapter 建立新的 Adapter
@@ -35,6 +36,11 @@ func NewAgentAdapter(registry *core.Registry, modelName, systemPrompt string, de
 		debug:        debug,
 		logger:       logger,
 	}
+}
+
+// SetShortTermMemoryCallback 設定短期記憶回調
+func (a *AgentAdapter) SetShortTermMemoryCallback(fn func(source, content string)) {
+	a.onShortTermMemory = fn
 }
 
 // Process 實作 Processor 介面
@@ -110,6 +116,11 @@ func (a *AgentAdapter) Process(env channel.Envelope) string {
 		history.CheckAndSummarize(myAgent.Session, a.modelName, a.systemPrompt)
 	}()
 
+	// [SHORT-TERM MEMORY] 自動儲存對話回應
+	if response != "" && a.onShortTermMemory != nil {
+		a.onShortTermMemory("chat", response)
+	}
+
 	return response
 }
 
@@ -131,6 +142,11 @@ func (a *AgentAdapter) getOrCreateAgent(sessionID string) *agent.Agent {
 
 	// 建立 Agent
 	newAgent := agent.NewAgent(a.modelName, a.systemPrompt, session, a.registry, a.logger)
+
+	// 設定短期記憶回調
+	if a.onShortTermMemory != nil {
+		newAgent.OnShortTermMemory = a.onShortTermMemory
+	}
 
 	// 設定 Callbacks (為了 debug)
 	if a.debug {

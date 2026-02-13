@@ -27,6 +27,7 @@ type Agent struct {
 	OnModelMessageComplete func(content string)
 	OnToolCall             func(name, args string)
 	OnToolResult           func(result string)
+	OnShortTermMemory      func(source, content string) // 短期記憶自動存入回調
 }
 
 // NewAgent 建立一個新的 Agent 實例
@@ -204,6 +205,15 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 				a.Logger.LogToolResult(tc.Function.Name, result, toolErr)
 			}
 
+			// [SHORT-TERM MEMORY] 將工具回應自動存入短期記憶
+			if toolErr == nil && result != "" && a.OnShortTermMemory != nil {
+				// 根據工具名稱決定來源分類
+				source := toolNameToMemorySource(tc.Function.Name)
+				if source != "" {
+					a.OnShortTermMemory(source, result)
+				}
+			}
+
 			// --- 強化背景執行的反饋 ---
 			var toolFeedback string
 			if toolErr != nil {
@@ -240,4 +250,20 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 	}
 
 	return finalResponse, nil
+}
+
+// toolNameToMemorySource 將工具名稱對應到短期記憶的來源分類
+// 返回空字串表示不需要儲存
+func toolNameToMemorySource(toolName string) string {
+	sourceMap := map[string]string{
+		"get_taiwan_weather": "weather",
+		"read_calendars":     "calendar",
+		"read_email":         "email",
+		"web_search":         "search",
+		"knowledge_search":   "knowledge_query",
+	}
+	if source, ok := sourceMap[toolName]; ok {
+		return source
+	}
+	return ""
 }

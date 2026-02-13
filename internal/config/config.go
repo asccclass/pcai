@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -11,21 +12,31 @@ import (
 
 // Config 儲存全域配置參數
 type Config struct {
-	Model           string
-	OllamaURL       string
-	SystemPrompt    string
-	FontPath        string
-	OutputDir       string
-	HistoryPath     string
-	TelegramToken   string
-	TelegramAdminID string
-	TelegramDebug   bool
-	GOGPath         string
+	Model            string
+	OllamaURL        string
+	SystemPrompt     string
+	FontPath         string
+	OutputDir        string
+	HistoryPath      string
+	TelegramToken    string
+	TelegramAdminID  string
+	TelegramDebug    bool
+	GOGPath          string
+	ShortTermTTLDays int // 短期記憶保留天數 (預設 7 天)
 }
 
 func getEnvBool(key string, fallback bool) bool {
 	if value, ok := os.LookupEnv(key); ok {
 		return value == "true" || value == "1"
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if value, ok := os.LookupEnv(key); ok {
+		if n, err := strconv.Atoi(value); err == nil {
+			return n
+		}
 	}
 	return fallback
 }
@@ -93,10 +104,11 @@ func LoadConfig() *Config {
 		FontPath:     getEnv("PCAI_FONT_PATH", filepath.Join(home, "assets", "fonts", "msjh.ttf")),
 		OutputDir:    getEnv("PCAI_PDF_OUTPUT_DIR", "./exports"),
 
-		HistoryPath:     getEnv("PCAI_HISTORY_PATH", filepath.Join(home, "internal", "history")),
-		TelegramToken:   getEnv("TELEGRAM_TOKEN", ""),
-		TelegramAdminID: getEnv("TELEGRAM_ADMIN_ID", ""),
-		TelegramDebug:   getEnvBool("TELEGRAM_DEBUG", false),
-		GOGPath:         getEnv("GOG_PATH", filepath.Join(home, "bin", "gog.exe")),
+		HistoryPath:      getEnv("PCAI_HISTORY_PATH", filepath.Join(home, "internal", "history")),
+		TelegramToken:    getEnv("TELEGRAM_TOKEN", ""),
+		TelegramAdminID:  getEnv("TELEGRAM_ADMIN_ID", ""),
+		TelegramDebug:    getEnvBool("TELEGRAM_DEBUG", false),
+		GOGPath:          getEnv("GOG_PATH", filepath.Join(home, "bin", "gog.exe")),
+		ShortTermTTLDays: getEnvInt("SHORT_TERM_TTL_DAYS", 7),
 	}
 }

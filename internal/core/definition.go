@@ -71,11 +71,63 @@ func (r *Registry) GetDefinitions() []api.Tool {
 
 // CallTool 根據 AI 的要求執行對應工具
 func (r *Registry) CallTool(name string, argsJSON string) (string, error) {
+	// [FIX] 工具名稱別名映射 (處理 LLM 幻覺)
+	aliasMap := map[string]string{
+		"manage_task":      "manage_cron_job",
+		"manage_scheduler": "manage_cron_job",
+		"schedule_task":    "manage_cron_job",
+		"task_planner":     "manage_cron_job",
+		"run_task":         "manage_cron_job",
+		"cron":             "manage_cron_job",
+		"manage_cron_task": "manage_cron_job",
+	}
+	if alias, ok := aliasMap[name]; ok {
+		name = alias
+	}
+
+	// [FIX] 全域 JSON 參數清理：處理 LLM 幻覺產生的巢狀物件
+	// 例如將 {"action":{"type":"string","value":"run_once"}}
+	// 轉為   {"action":"run_once"}
+	argsJSON = sanitizeToolArgs(argsJSON)
+
 	entry, ok := r.tools[name]
 	if !ok {
 		return "", fmt.Errorf("找不到工具: %s", name)
 	}
 	return entry.tool.Run(argsJSON)
+}
+
+// sanitizeToolArgs 清理 LLM 產生的巢狀 JSON 參數
+// 將 {"type":"string","value":"X"} 轉為 "X"
+// 將 {"type":"integer","value":5} 轉為 5
+func sanitizeToolArgs(argsJSON string) string {
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(argsJSON), &raw); err != nil {
+		return argsJSON // 不是合法 JSON，原樣回傳
+	}
+
+	changed := false
+	for key, val := range raw {
+		if m, ok := val.(map[string]interface{}); ok {
+			// 檢查是否為 {"type":"...", "value":"..."} 格式
+			if _, hasType := m["type"]; hasType {
+				if v, hasValue := m["value"]; hasValue {
+					raw[key] = v
+					changed = true
+				}
+			}
+		}
+	}
+
+	if !changed {
+		return argsJSON
+	}
+
+	fixed, err := json.Marshal(raw)
+	if err != nil {
+		return argsJSON
+	}
+	return string(fixed)
 }
 
 // GetToolPrompt 產生給 LLM 看的工具說明 (Schema)

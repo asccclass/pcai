@@ -9,3 +9,4 @@ envfile
 botmemory/*
 user_workspace/*
 sandbox/*
+temp_*

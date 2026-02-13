@@ -488,8 +488,8 @@
                 <!-- Feature 2 -->
                 <div class="feature-card">
                     <div class="feature-icon">🧠</div>
-                    <h3 class="feature-title">RAG 長期記憶</h3>
-                    <p class="feature-text">具備自動記憶功能，將對話歸納為知識庫。AI 能隨時回憶起過去的專案細節與討論內容。</p>
+                    <h3 class="feature-title">雙層記憶系統</h3>
+                    <p class="feature-text">永久記憶（knowledge.md）+ 短期記憶（SQLite TTL），工具回應與對話自動存入，過期自動清理。</p>
                 </div>
 
                 <!-- Feature 3 -->
@@ -502,8 +502,8 @@
                 <!-- Feature 4 -->
                 <div class="feature-card">
                     <div class="feature-icon">💬</div>
-                    <h3 class="feature-title">Signal & Gmail 整合</h3>
-                    <p class="feature-text">隨時透過 Signal App 與你的 AI 對話，或讓它自動摘要重要的 Gmail 郵件。</p>
+                    <h3 class="feature-title">Telegram & Gmail 整合</h3>
+                    <p class="feature-text">隨時透過 Telegram Bot 與你的 AI 對話，對話內容自動存入短期記憶。自動摘要重要 Gmail 郵件。</p>
                 </div>
 
                 <!-- Feature 5 -->
@@ -517,7 +517,7 @@
                 <div class="feature-card">
                     <div class="feature-icon">💻</div>
                     <h3 class="feature-title">跨平台支援</h3>
-                    <p class="feature-text">完美支援 Windows, macOS 與 Linux (含 ARM64)，一次編寫，到處執行。</p>
+                    <p class="feature-text">完美支援 Windows, macOS 與 Linux (含 ARM64)，Shell 指令自動翻譯（如 ls → dir），一次編寫，到處執行。</p>
                 </div>
 
                 <!-- Feature 7: Dynamic Skills -->
@@ -539,6 +539,27 @@
                     <div class="feature-icon">💾</div>
                     <h3 class="feature-title">技能持久化記憶</h3>
                     <p class="feature-text">已安裝的技能會自動記錄到 Registry，重新啟動時自動載入，不遺忘任何已學會的能力。</p>
+                </div>
+
+                <!-- Feature 10: Tool Hints -->
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3 class="feature-title">智慧工具路由</h3>
+                    <p class="feature-text">自動偵測意圖導向正確工具，修正 LLM 幻覺的工具名稱與 JSON 格式，確保每次執行都精準無誤。</p>
+                </div>
+
+                <!-- Feature 11: Morning Briefing -->
+                <div class="feature-card">
+                    <div class="feature-icon">☀️</div>
+                    <h3 class="feature-title">每日晨間簡報</h3>
+                    <p class="feature-text">每天 06:30 自動整合 Email、行事曆與天氣，透過 LLM 摘要後發送到 Telegram，開啟高效一天。</p>
+                </div>
+
+                <!-- Feature 12: Auto Memory Cleanup -->
+                <div class="feature-card">
+                    <div class="feature-icon">🧹</div>
+                    <h3 class="feature-title">記憶自動管理</h3>
+                    <p class="feature-text">短期記憶 TTL 可透過 envfile 設定天數，每日凌晨 3 點自動清理過期記錄，保持系統輕量高效。</p>
                 </div>
             </div>
         </div>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "modernc.org/sqlite" // 無 CGO 版本驅動
 )
@@ -55,6 +56,13 @@ func (db *DB) migrate() error {
 		cron_spec TEXT NOT NULL,
 		task_type TEXT NOT NULL,
 		description TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS short_term_memory (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		source TEXT NOT NULL,
+		content TEXT NOT NULL,
+		expires_at DATETIME NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);`
 
@@ -158,4 +166,76 @@ func (db *DB) GetRecentLogs(ctx context.Context, limit int) ([]map[string]interf
 		}
 	}
 	return logs, nil
+}
+
+// ==================== Short-Term Memory ====================
+
+// ShortTermMemoryEntry 短期記憶條目
+type ShortTermMemoryEntry struct {
+	ID        int    `json:"id"`
+	Source    string `json:"source"`
+	Content   string `json:"content"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+}
+
+// AddShortTermMemory 新增短期記憶
+func (db *DB) AddShortTermMemory(ctx context.Context, source, content string, ttlDays int) error {
+	expiresAt := time.Now().AddDate(0, 0, ttlDays).Format("2006-01-02 15:04:05")
+	query := `INSERT INTO short_term_memory (source, content, expires_at) VALUES (?, ?, ?)`
+	_, err := db.ExecContext(ctx, query, source, content, expiresAt)
+	return err
+}
+
+// GetRecentShortTermMemory 取得最近的未過期短期記憶
+func (db *DB) GetRecentShortTermMemory(ctx context.Context, limit int) ([]ShortTermMemoryEntry, error) {
+	query := `SELECT id, source, content, expires_at, created_at 
+			  FROM short_term_memory 
+			  WHERE expires_at > datetime('now') 
+			  ORDER BY created_at DESC LIMIT ?`
+	rows, err := db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []ShortTermMemoryEntry
+	for rows.Next() {
+		var e ShortTermMemoryEntry
+		if err := rows.Scan(&e.ID, &e.Source, &e.Content, &e.ExpiresAt, &e.CreatedAt); err == nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
+}
+
+// GetShortTermMemoryBySource 按來源查詢短期記憶
+func (db *DB) GetShortTermMemoryBySource(ctx context.Context, source string, limit int) ([]ShortTermMemoryEntry, error) {
+	query := `SELECT id, source, content, expires_at, created_at 
+			  FROM short_term_memory 
+			  WHERE source = ? AND expires_at > datetime('now') 
+			  ORDER BY created_at DESC LIMIT ?`
+	rows, err := db.QueryContext(ctx, query, source, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []ShortTermMemoryEntry
+	for rows.Next() {
+		var e ShortTermMemoryEntry
+		if err := rows.Scan(&e.ID, &e.Source, &e.Content, &e.ExpiresAt, &e.CreatedAt); err == nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
+}
+
+// CleanExpiredMemory 刪除已過期的短期記憶
+func (db *DB) CleanExpiredMemory(ctx context.Context) (int64, error) {
+	result, err := db.ExecContext(ctx, "DELETE FROM short_term_memory WHERE expires_at <= datetime('now')")
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
