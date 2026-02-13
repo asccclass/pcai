@@ -1,6 +1,9 @@
 ---
 name: read_email
 description: Read, search and summarize user's emails from Gmail using the gog tool.
+command: gog gmail search "{{query}}" --limit {{limit}}
+options:
+  limit: ["5", "10", "20"]
 metadata:
   pcai:
     requires:
