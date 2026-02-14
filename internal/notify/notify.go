@@ -61,7 +61,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, level string, message string)
 		go func(notifier Notifier, msg string) {
 			// 注意：這裡使用 context.Background() 或是從 ctx 衍生
 			// 避免因為主進程的 ctx 取消導致通知發一半中斷
-			sendCtx, cancel := context.WithTimeout(context.Background(), 15)
+			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 
 			err := notifier.Send(sendCtx, msg)

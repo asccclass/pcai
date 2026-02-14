@@ -239,3 +239,26 @@ func (db *DB) CleanExpiredMemory(ctx context.Context) (int64, error) {
 	}
 	return result.RowsAffected()
 }
+
+// GetLastHeartbeatAction 取得最後一次執行特定動作的時間
+func (db *DB) GetLastHeartbeatAction(ctx context.Context, actionPrefix string) (time.Time, error) {
+	// actionPrefix 例如 "ACTION: SELF_TEST"
+	query := `SELECT created_at FROM heartbeat_logs WHERE decision LIKE ? ORDER BY created_at DESC LIMIT 1`
+	var createdAtStr string
+	err := db.QueryRowContext(ctx, query, actionPrefix+"%").Scan(&createdAtStr)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil // 從未執行過 (回傳 Zero Time)
+		}
+		return time.Time{}, err
+	}
+
+	// SQLite 預設時間格式 "2006-01-02 15:04:05" (UTC)
+	// 嘗試解析 (注意：這裡假設 DB 存的是 UTC，若有時區需調整)
+	t, err := time.Parse("2006-01-02 15:04:05", createdAtStr)
+	if err != nil {
+		// 容錯：嘗試 RFC3339
+		t, err = time.Parse(time.RFC3339, createdAtStr)
+	}
+	return t, err
+}

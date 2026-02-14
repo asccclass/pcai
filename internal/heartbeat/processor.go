@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/asccclass/pcai/internal/notify"
 	"github.com/asccclass/pcai/skills"
 	"github.com/go-resty/resty/v2"
+	"github.com/ollama/ollama/api"
 	// 假設你的專案名稱為 pcai
 )
 
@@ -44,6 +47,7 @@ type ContactInfo struct {
 type ToolExecutor interface {
 	CallTool(name string, argsJSON string) (string, error)
 	GetToolPrompt() string
+	GetDefinitions() []api.Tool
 }
 
 // PCAIBrain 實作 scheduler.HeartbeatBrain 介面
@@ -58,13 +62,14 @@ type PCAIBrain struct {
 	tools       ToolExecutor // 加入工具執行器
 	tgToken     string
 	tgChatID    string
+	lineToken   string
 }
 
 func (b *PCAIBrain) SetTools(executor ToolExecutor) {
 	b.tools = executor
 }
 
-func NewPCAIBrain(db *database.DB, ollamaURL, modelName, tgToken, tgChatID string) *PCAIBrain {
+func NewPCAIBrain(db *database.DB, ollamaURL, modelName, tgToken, tgChatID, lineToken string) *PCAIBrain {
 	brain := &PCAIBrain{
 		DB:          db,
 		httpClient:  resty.New().SetTimeout(100 * time.Second).SetRetryCount(2),
@@ -73,6 +78,7 @@ func NewPCAIBrain(db *database.DB, ollamaURL, modelName, tgToken, tgChatID strin
 		filterSkill: skills.NewFilterSkill(db),
 		tgToken:     tgToken,
 		tgChatID:    tgChatID,
+		lineToken:   lineToken,
 	}
 	brain.SetupDispatcher()
 	return brain
@@ -96,8 +102,10 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 支援的意圖 (Intent)：
 1. SET_FILTER: 當用戶想忽略、過濾、或標記某號碼/關鍵字為重要時。
    - params 需包含: "pattern" (號碼或關鍵字), "action" (URGENT, NORMAL, IGNORE)
-2. CHAT: 一般聊天或詢問。
-3. TOOL_USE: 當用戶要求執行特定任務（如列出檔案、讀取網頁、查詢知識庫）。
+2. CHAT: 一般閒聊（**若用戶是在詢問事實、回憶、或查詢具體資訊，請務必使用 TOOL_USE**）。
+3. TOOL_USE: 當用戶要求執行特定任務（如列出檔案、讀取網頁），或**查詢記憶/知識庫/人事物資訊**。
+   - params 需包含: "tool" (工具名稱), "args" (JSON 物件或 JSON 字串)
+
    - params 需包含: "tool" (工具名稱), "args" (JSON 物件或 JSON 字串)
    - 重要：列出檔案請優先使用 fs_list_dir (跨平台)，而非 shell_exec。
    - 若必須使用 shell_exec，請根據作業系統選擇正確的指令 (Windows: dir, del, copy; Linux/Mac: ls, rm, cp)。
@@ -180,6 +188,17 @@ func (b *PCAIBrain) CollectEnv(ctx context.Context) string {
 			}
 		}
 	*/
+
+	// C. 檢查是否需要執行每日自檢 (Daily Self-Test)
+	lastTest, err := b.DB.GetLastHeartbeatAction(ctx, "ACTION: SELF_TEST")
+	if err != nil {
+		fmt.Printf("⚠️ Check last test failed: %v\n", err)
+	}
+	// 如果從未執行過 (IsZero) 或 距離上次執行超過 24 小時
+	if lastTest.IsZero() || time.Since(lastTest) > 24*time.Hour {
+		sb.WriteString("\n### SYSTEM ALERT: DAILY_SELF_TEST_DUE ###\n(System has been idle and no self-test in last 24h. Please execute SELF_TEST.)\n")
+	}
+
 	return sb.String()
 }
 
@@ -195,10 +214,12 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 規則：
 1. 若符合過濾規則且為 IGNORE，回覆 "STATUS: IDLE"。
 2. 若訊息包含緊急內容或來自重要人物，回覆 "ACTION: NOTIFY_USER"。
+3. 若看見 "SYSTEM ALERT: DAILY_SELF_TEST_DUE"，除非有更緊急的訊息，否則請回覆 "ACTION: SELF_TEST"。
 
 請在 JSON 中加入 "score" 欄位，代表你對此判斷的信心指數 (0-100)：
 - 100: 完全確定（如：符合明確的過濾模式）。
 - 60 以下: 不太確定（如：內容語意模糊、未見過的號碼但內容像廣告）。
+- 90: 系統自檢請求。
 
 請嚴格回覆：
 {"decision": "...", "reason": "...", "score": 85}
@@ -345,11 +366,13 @@ func (b *PCAIBrain) SetupDispatcher() {
 		})
 	}
 
-	// 2. 註冊 LINE
-	dispatcher.Register(&notify.LineNotifier{
-		Token:  "YOUR_LINE_TOKEN",
-		Client: commonClient,
-	})
+	// 2. 註冊 LINE (僅當有 Token 時)
+	if b.lineToken != "" {
+		dispatcher.Register(&notify.LineNotifier{
+			Token:  b.lineToken,
+			Client: commonClient,
+		})
+	}
 
 	b.dispatcher = dispatcher
 }
@@ -380,6 +403,10 @@ func (b *PCAIBrain) ExecuteDecision(ctx context.Context, decisionStr string) err
 		msg := fmt.Sprintf("🚨 重要通知！\n理由: %s\n內容: %s", reason, decision)
 		// 這裡串接你的 Signal 送信工具或系統通知
 		b.dispatcher.Dispatch(ctx, "URGENT", msg)
+	}
+
+	if decision == "ACTION: SELF_TEST" {
+		return b.RunSelfTest(ctx)
 	}
 
 	return nil
@@ -483,4 +510,101 @@ func (b *PCAIBrain) GenerateMorningBriefing(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// RunSelfTest 執行系統自我檢測
+func (b *PCAIBrain) RunSelfTest(ctx context.Context) error {
+	fmt.Println("🛠️ [SelfTest] Starting daily system self-test...")
+
+	// 1. Database Check
+	dbStatus := "✅ PASS"
+	if err := b.DB.Ping(); err != nil {
+		dbStatus = fmt.Sprintf("❌ FAIL (%v)", err)
+	}
+
+	// 2. Internet Check
+	netStatus := "✅ PASS"
+	if _, err := b.httpClient.R().Get("https://www.google.com"); err != nil {
+		netStatus = fmt.Sprintf("❌ FAIL (%v)", err)
+	}
+
+	// 3. LLM Check
+	llmStatus := "✅ PASS"
+	// 給一個簡單的 Ping
+	llmResp, err := b.AskOllama(ctx, "Ping. Reply with 'Pong'.")
+	if err != nil {
+		llmStatus = fmt.Sprintf("❌ FAIL (%v)", err)
+	} else if llmResp == "" {
+		llmStatus = "❌ FAIL (Empty Response)"
+	}
+
+	// 4. Tools Check
+	toolStatus := "UNKNOWN"
+	var toolDetails strings.Builder
+	if b.tools != nil {
+		toolStatus = "✅ PASS (Registry Connected)"
+		toolDetails.WriteString("\n## 🛠️ Tools & Skills Status\n")
+		defs := b.tools.GetDefinitions()
+		for _, tool := range defs {
+			toolDetails.WriteString(fmt.Sprintf("- **%s**: ✅ Available (%s)\n", tool.Function.Name, tool.Function.Description))
+		}
+	} else {
+		toolStatus = "❌ FAIL (No Tool Executor)"
+		toolDetails.WriteString("\n## 🛠️ Tools & Skills Status\n- ❌ Registry Not Connected\n")
+	}
+
+	// 產生完整報告 (存檔用)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	fullReport := fmt.Sprintf("# Daily System Self-Test Report\nDate: %s\n\n- **Database**: %s\n- **Internet**: %s\n- **LLM**: %s\n- **Tools**: %s\n%s",
+		timestamp, dbStatus, netStatus, llmStatus, toolStatus, toolDetails.String())
+
+	// 產生簡短通知 (Telegram用)
+	summary := fmt.Sprintf("🛠️ [System] Daily Self-Test Completed.\n\n- **Database**: %s\n- **Internet**: %s\n- **LLM**: %s\n- **Tools**: %s\n\n(See `botmemory/self_test_reports/` for full details)",
+		dbStatus, netStatus, llmStatus, toolStatus)
+
+	// 判斷是否需要通知
+	shouldNotify := false
+	hasError := !strings.Contains(dbStatus, "PASS") || !strings.Contains(netStatus, "PASS") || !strings.Contains(llmStatus, "PASS") || !strings.Contains(toolStatus, "PASS")
+
+	// 檢查今日是否已執行過
+	// GetLastHeartbeatAction returns the *previous* run time since we haven't logged this one yet.
+	lastTest, err := b.DB.GetLastHeartbeatAction(ctx, "ACTION: SELF_TEST")
+	isFirstTestToday := false
+	if err != nil || lastTest.IsZero() {
+		isFirstTestToday = true
+	} else {
+		// 檢查上次執行時間是否為今天
+		y, m, d := time.Now().Date()
+		lastY, lastM, lastD := lastTest.Date()
+		if lastY != y || lastM != m || lastD != d {
+			isFirstTestToday = true
+		}
+	}
+
+	if hasError || isFirstTestToday {
+		shouldNotify = true
+	} else {
+		fmt.Println("ℹ️ [SelfTest] Notification skipped (Not first test of day & no errors).")
+	}
+
+	// 儲存完整報告到檔案
+	home, _ := os.Getwd()
+	reportDir := filepath.Join(home, "botmemory", "self_test_reports")
+	_ = os.MkdirAll(reportDir, 0755)
+
+	reportPath := filepath.Join(reportDir, fmt.Sprintf("report_%s.md", time.Now().Format("20060102_150405")))
+	if err := os.WriteFile(reportPath, []byte(fullReport), 0644); err != nil {
+		fmt.Printf("⚠️ Write report failed: %v\n", err)
+	} else {
+		fmt.Printf("✅ Report saved to: %s\n", reportPath)
+	}
+
+	// 發送通知 (使用簡短摘要)
+	if shouldNotify {
+		b.dispatcher.Dispatch(ctx, "NORMAL", summary)
+	}
+
+	// 寫入 Heartbeat Log (重置計時器)
+	err = b.DB.CreateHeartbeatLog(ctx, "SYSTEM: AUTO_TEST", "ACTION: SELF_TEST", "Daily Check Completed", 100, summary)
+	return err
 }

@@ -9,15 +9,45 @@ type Controller struct {
 	Manager      *Manager
 	SkillManager *SkillManager
 	Executor     *MemoryExecutor
+	PendingStore *PendingStore // [NEW] Pending Store for confirmation
 }
 
 // NewController creates a new memory controller
-func NewController(m *Manager, sm *SkillManager, exec *MemoryExecutor) *Controller {
+func NewController(m *Manager, sm *SkillManager, exec *MemoryExecutor, ps *PendingStore) *Controller {
 	return &Controller{
 		Manager:      m,
 		SkillManager: sm,
 		Executor:     exec,
+		PendingStore: ps,
 	}
+}
+
+// ConfirmPending approves a pending memory item and saves it to permanent storage
+func (c *Controller) ConfirmPending(id string) (string, error) {
+	entry, err := c.PendingStore.Confirm(id)
+	if err != nil {
+		return "", err
+	}
+
+	err = c.Manager.Add(entry.Content, entry.Tags)
+	if err != nil {
+		return "", fmt.Errorf("failed to save to permanent memory: %w", err)
+	}
+
+	return fmt.Sprintf("✅ Memory confirmed and saved. ID: %s", id), nil
+}
+
+// RejectPending discards a pending memory item
+func (c *Controller) RejectPending(id string) (string, error) {
+	if err := c.PendingStore.Reject(id); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("🗑️ Memory rejected and discarded. ID: %s", id), nil
+}
+
+// ListPending returns all pending items
+func (c *Controller) ListPending() []*PendingEntry {
+	return c.PendingStore.List()
 }
 
 // ProcessChatHistory analyzes chat history and triggers relevant memory skills
@@ -53,12 +83,10 @@ func (c *Controller) ProcessChatHistory(chatText string) ([]string, error) {
 					tags = append(tags, category)
 				}
 
-				err := c.Manager.Add(content, tags)
-				if err != nil {
-					logs = append(logs, fmt.Sprintf("❌ Failed to save memory from %s: %v", skill.Name, err))
-				} else {
-					logs = append(logs, fmt.Sprintf("✅ Encoded memory from %s: %s", skill.Name, content))
-				}
+				// [CHANGED] Instead of Manager.Add directly, we use PendingStore
+				pendingID := c.PendingStore.Add(content, tags)
+
+				logs = append(logs, fmt.Sprintf("⏳ Memory pending confirmation (ID: %s): %s", pendingID, content))
 			}
 		}
 	}
