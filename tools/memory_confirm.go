@@ -41,8 +41,8 @@ func (t *MemoryConfirmTool) Definition() api.Tool {
 				js := `{
 					"action": {
 						"type": "string",
-						"description": "操作類型：confirm (確認寫入), reject (拒絕), confirm_all (全部確認), reject_all (全部拒絕)",
-						"enum": ["confirm", "reject", "confirm_all", "reject_all"]
+						"description": "操作類型：confirm (確認寫入), reject (拒絕), confirm_all (全部確認), reject_all (全部拒絕), list (列出待確認項目)",
+						"enum": ["confirm", "reject", "confirm_all", "reject_all", "list"]
 					},
 					"pending_id": {
 						"type": "string",
@@ -113,8 +113,20 @@ func (t *MemoryConfirmTool) Run(argsJSON string) (string, error) {
 		}
 		return fmt.Sprintf("已取消全部 %d 筆待確認記憶。", count), nil
 
+	case "list":
+		entries := t.pending.List()
+		if len(entries) == 0 {
+			return "目前沒有待確認的記憶。", nil
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("📋 目前有 %d 筆待確認記憶：\n", len(entries)))
+		for _, e := range entries {
+			sb.WriteString(fmt.Sprintf("- [%s] %s (Tags: %v)\n", e.ID, e.Content, e.Tags))
+		}
+		return sb.String(), nil
+
 	default:
-		return fmt.Sprintf("不支援的操作: %s (支援: confirm, reject, confirm_all, reject_all)", args.Action), nil
+		return fmt.Sprintf("不支援的操作: %s (支援: confirm, reject, confirm_all, reject_all, list)", args.Action), nil
 	}
 }
 

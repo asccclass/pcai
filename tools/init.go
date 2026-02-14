@@ -23,6 +23,7 @@ import (
 	"github.com/asccclass/pcai/internal/scheduler"
 	"github.com/asccclass/pcai/llms/ollama"
 	"github.com/asccclass/pcai/skills"
+	browserskill "github.com/asccclass/pcai/skills/browser"
 	dclient "github.com/docker/docker/client"
 	"github.com/go-resty/resty/v2"
 	"github.com/ollama/ollama/api"
@@ -104,7 +105,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	// defer sqliteDB.Close()
 
 	// 初始化排程管理器(Hybrid Manager)
-	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model, cfg.TelegramToken, cfg.TelegramAdminID)
+	myBrain := heartbeat.NewPCAIBrain(sqliteDB, cfg.OllamaURL, cfg.Model, cfg.TelegramToken, cfg.TelegramAdminID, cfg.LineToken)
 	schedMgr := scheduler.NewManager(myBrain, sqliteDB)
 	if onAsyncEvent != nil {
 		schedMgr.OnCompletion = onAsyncEvent // 當排程任務完成輸出後，恢復提示符
@@ -213,8 +214,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	// 建立 Manager
 	memManager := memory.NewManager(jsonPath, embedder)
 
-	// 建立 PendingStore (暫存待確認記憶，30 分鐘過期)
-	pendingStore := memory.NewPendingStore(30 * time.Minute)
+	// 建立 PendingStore (暫存待確認記憶，24小時過期)
+	pendingStore := memory.NewPendingStore(24 * time.Hour)
 
 	// SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
 	fmt.Println("✅ [Scheduler] 正在初始化記憶庫同步...")
@@ -233,7 +234,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	// Wrapper for ChatStream to match LLMProvider signature
 	memExecutor := memory.NewMemoryExecutor(ollama.ChatStream, cfg.Model)
 
-	memController := memory.NewController(memManager, memSkillMgr, memExecutor)
+	// [FIX] Pass pendingStore to Controller
+	memController := memory.NewController(memManager, memSkillMgr, memExecutor, pendingStore)
 
 	// Inject into history package
 	history.GlobalMemoryController = memController
@@ -283,6 +285,14 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	registry.Register(NewGoogleTool())
 	registry.Register(&GitAutoCommitTool{}) // Git 自動提交工具
 
+	// Browser Tools
+	registry.Register(&browserskill.BrowserOpenTool{})
+	registry.Register(&browserskill.BrowserSnapshotTool{})
+	registry.Register(&browserskill.BrowserClickTool{})
+	registry.Register(&browserskill.BrowserTypeTool{})
+	registry.Register(&browserskill.BrowserScrollTool{})
+	registry.Register(&browserskill.BrowserGetTool{})
+
 	// Python Sandbox Tool
 	if pyTool, err := NewPythonSandboxTool(workspacePath, home); err != nil {
 		fmt.Printf("⚠️ [Tools] Python Sandbox not available: %v\n", err)
@@ -302,6 +312,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 
 	// 任務規劃工具
 	registry.Register(NewPlannerTool())
+
+	// [NEW] 系統缺憾回報工具
+	registry.Register(&ReportMissingTool{})
 
 	// 註冊檔案系統工具
 	registry.Register(&FsMkdirTool{Manager: fsManager})
@@ -532,11 +545,12 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		fmt.Printf("⚠️ [Scheduler] Failed to load persistent jobs: %v\n", err)
 	}
 
-	// --- 新增：Telegram 整合 ---
+	// --- 新增：Telegram & WhatsApp 整合 ---
 	var tgChannel *channel.TelegramChannel // 宣告在外部以供 cleanup 存取
+	var waChannel *channel.WhatsAppChannel
 
 	// [FIX] 移動到這裡，確保 registry 已經註冊完所有工具
-	if cfg.TelegramToken != "" {
+	if cfg.TelegramToken != "" || cfg.WhatsAppEnabled {
 		// 1. 建立 Agent Adapter
 		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt, cfg.TelegramDebug, logger)
 
@@ -559,20 +573,38 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		})
 
 		// 2. 建立 Dispatcher
+		// 注意：Dispatcher 目前綁定 TelegramAdminID，若 WhatsApp 來源不同管理者，可能需擴充 Dispatcher
+		// 但為簡化，暫時共用 Admin ID 檢查 (Dispatcher 內部若不強制 Admin 則沒差)
 		dispatcher := gateway.NewDispatcher(adapter, cfg.TelegramAdminID)
 		if onAsyncEvent != nil {
 			dispatcher.OnCompletion = onAsyncEvent
 		}
 
 		// 3. 建立 Telegram Channel
-		var err error
-		tgChannel, err = channel.NewTelegramChannel(cfg.TelegramToken, cfg.TelegramDebug)
-		if err != nil {
-			log.Printf("⚠️ 無法啟動 Telegram Channel: %v", err)
-		} else {
-			// 4. 啟動監聽 (非同步)
-			go tgChannel.Listen(dispatcher.HandleMessage)
-			// log.Println("✅ Telegram Channel 已啟動並連接至 Gateway") // Listen 內部會印
+		if cfg.TelegramToken != "" {
+			var err error
+			tgChannel, err = channel.NewTelegramChannel(cfg.TelegramToken, cfg.TelegramDebug)
+			if err != nil {
+				log.Printf("⚠️ 無法啟動 Telegram Channel: %v", err)
+			} else {
+				// 4. 啟動監聽 (非同步)
+				go tgChannel.Listen(dispatcher.HandleMessage)
+				// log.Println("✅ Telegram Channel 已啟動並連接至 Gateway") // Listen 內部會印
+			}
+		}
+
+		// 3.5 建立 WhatsApp Channel
+		if cfg.WhatsAppEnabled {
+			var err error
+			waChannel, err = channel.NewWhatsAppChannel(cfg.WhatsAppStorePath, logger)
+			if err != nil {
+				log.Printf("⚠️ 無法啟動 WhatsApp Channel: %v", err)
+			} else {
+				go waChannel.Listen(dispatcher.HandleMessage)
+			}
+
+			// [FIX] 無論是否啟動成功都註冊工具，避免 Agent 幻覺 (Run 內會檢查 Channel 是否為 nil)
+			registry.Register(&WhatsAppSendTool{Channel: waChannel})
 		}
 	}
 
@@ -583,6 +615,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	cleanup := func() {
 		if tgChannel != nil {
 			tgChannel.Stop()
+		}
+		if waChannel != nil {
+			waChannel.Stop()
 		}
 	}
 
