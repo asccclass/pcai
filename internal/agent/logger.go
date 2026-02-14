@@ -143,3 +143,34 @@ func (l *SystemLogger) LogError(prefix string, err error) {
 		Error:     err.Error(),
 	})
 }
+
+// LogHallucination 記錄幻覺 (嘗試呼叫不存在的工具)
+func (l *SystemLogger) LogHallucination(instruction, toolName string) {
+	// 這裡我們直接寫入 notools.log，保持與 tools.ReportMissingTool 一致的行為
+	// 雖然有點重複代碼，但避免了 circular dependency
+
+	entry := map[string]string{
+		"timestamp":   time.Now().Format(time.RFC3339),
+		"type":        "Hallucination",
+		"instruction": instruction,
+		"missing":     toolName,
+	}
+
+	data, _ := json.Marshal(entry)
+
+	// 假設 botmemory 目錄已存在 (logger 初始化時會建立)
+	// logDir is parent of l.filePath
+	logDir := filepath.Dir(l.filePath)
+	logPath := filepath.Join(logDir, "notools.log")
+
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("⚠️ [Logger] Failed to open notools.log: %v\n", err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(string(data) + "\n"); err != nil {
+		fmt.Printf("⚠️ [Logger] Failed to write to notools.log: %v\n", err)
+	}
+}

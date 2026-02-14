@@ -218,6 +218,30 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			var toolFeedback string
 			if toolErr != nil {
 				toolFeedback = fmt.Sprintf("【執行失敗】：%v", toolErr)
+				// [NEW] 攔截幻覺 (Hallucination) 並記錄
+				if strings.Contains(toolErr.Error(), "找不到工具") {
+					// 為了避免 circular dependency，這裡我們不直接 import tools，
+					// 但因為 ReportMissingTool 在 tools package，而 tools import agent，
+					// 所以 agent 不能 import tools。這是一個架構問題。
+					// 解法：
+					// 1. 將 LogMissingToolEvent 移到 internal/agent 或 internal/core (最乾淨)
+					// 2. 定義一個 Callback 讓 InitRegistry 注入 (最快)
+
+					// 由於時間限制，我們採用 "定義 Callback" 的方式。
+					// 參見 Agent struct 的 OnToolResult 或新增一個 OnHallucination?
+					// 為了簡單，我們直接在 result string 提示使用者系統無此工具。
+					// 並依賴 `ReportMissingTool` 讓 LLM *主動* 回報。
+					// 但使用者說 "不要亂猜"，"若需要的功能系統沒有...記錄至 botmemory/notools.log"。
+
+					// 我們可以將 LogMissingToolEvent 的邏輯複製一份在這裡 (或移至 internal/utils?)
+					// 為了符合 "Clean Architecture"，我們不該讓 agent 依賴 tools。
+					// 讓我們把 LogMissingToolEvent 移到 internal/core/definition.go 或 internal/agent/logger.go?
+					//
+					// 其實 agent 已經有 Logger 了 (*SystemLogger)。我們可以加一個 LogHallucination 方法。
+					if a.Logger != nil {
+						a.Logger.LogHallucination(input, tc.Function.Name) // 需實作
+					}
+				}
 			} else {
 				// 如果結果包含 "背景啟動"，則給予強大的確認標記
 				if strings.Contains(result, "背景啟動") {
