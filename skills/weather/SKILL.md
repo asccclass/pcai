@@ -80,6 +80,43 @@ option_aliases:
     "台北市": "臺北市"
     "台中市": "臺中市"
     "台南市": "臺南市"
+    # English name aliases (LLM 可能將中文地名翻譯為英文)
+    "Keelung": "基隆市"
+    "Taipei": "臺北市"
+    "New Taipei": "新北市"
+    "Taoyuan": "桃園市"
+    "Hsinchu": "新竹市"
+    "Miaoli": "苗栗縣"
+    "Taichung": "臺中市"
+    "Changhua": "彰化縣"
+    "Nantou": "南投縣"
+    "Yunlin": "雲林縣"
+    "Chiayi": "嘉義市"
+    "Tainan": "臺南市"
+    "Kaohsiung": "高雄市"
+    "Pingtung": "屏東縣"
+    "Yilan": "宜蘭縣"
+    "Hualien": "花蓮縣"
+    "Taitung": "臺東縣"
+    "Penghu": "澎湖縣"
+    "Kinmen": "金門縣"
+    "Lienchiang": "連江縣"
+    "Matsu": "連江縣"
+    # 常見拼音變體
+    "Ilan": "宜蘭縣"
+    "Sindian": "新北市"
+    "Xindian": "新北市"
+    "Banqiao": "新北市"
+    "Banciao": "新北市"
+    "Tamsui": "新北市"
+    "Danshui": "新北市"
+    "Beitou": "臺北市"
+    # LLM 常見中文亂碼/錯字別名
+    "苗桃": "苗栗縣"
+    "苖栗": "苗栗縣"
+    "苖栗縣": "苗栗縣"
+    "苗粟": "苗栗縣"
+    "苗粟縣": "苗栗縣"
 ---
 
 # 查詢台灣地區天氣預報 (get_taiwan_weather)
@@ -87,14 +124,14 @@ option_aliases:
 從 Google Sheets 資料庫中查詢台灣各縣市指定地區的**目前時段及未來天氣預報**。系統會自動過濾掉已過期的時段。
 
 ## 參數描述
-- `location`: (string, required) 台灣的地區名稱。必須是合法行政區名稱 (如：臺北市、高雄市)。系統會自動校正些微的輸入錯誤。若使用者沒有輸入地點，則系統預設為「臺北市」。
+- `location`: (string, required) 台灣的繁體中文地區名稱。必須是合法行政區的繁體中文名稱 (如：臺北市、高雄市)。系統會自動校正些微的輸入錯誤。若使用者沒有輸入地點，則系統預設為「臺北市」。
 
 ## 呼叫範例
 fetch_url "https://script.google.com/macros/s/AKfycbyR1nCx7yYQHgXOlZ5ko_ucbSeyJhDIp-PYxQ8rPDSdexz0I1LrDotZbvpBLZp6YpizYw/exec?location=臺北市"
 
 ## 回傳格式說明
 回傳為 JSON 格式，包含該地區**目前時段及未來**的預報資訊：
-- `city`: 地區名稱
+- `city`: 繁體中文地區名稱
 - `queryTime`: 查詢當下的時間
 - `forecast`: 未來預報列表
     - `StartTime`: 預報開始時間

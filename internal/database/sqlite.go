@@ -240,6 +240,28 @@ func (db *DB) CleanExpiredMemory(ctx context.Context) (int64, error) {
 	return result.RowsAffected()
 }
 
+// SearchShortTermMemory 關鍵字搜尋短期記憶
+func (db *DB) SearchShortTermMemory(ctx context.Context, keyword string, limit int) ([]ShortTermMemoryEntry, error) {
+	query := `SELECT id, source, content, expires_at, created_at 
+			  FROM short_term_memory 
+			  WHERE content LIKE ? AND expires_at > datetime('now') 
+			  ORDER BY created_at DESC LIMIT ?`
+	rows, err := db.QueryContext(ctx, query, "%"+keyword+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []ShortTermMemoryEntry
+	for rows.Next() {
+		var e ShortTermMemoryEntry
+		if err := rows.Scan(&e.ID, &e.Source, &e.Content, &e.ExpiresAt, &e.CreatedAt); err == nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
+}
+
 // GetLastHeartbeatAction 取得最後一次執行特定動作的時間
 func (db *DB) GetLastHeartbeatAction(ctx context.Context, actionPrefix string) (time.Time, error) {
 	// actionPrefix 例如 "ACTION: SELF_TEST"

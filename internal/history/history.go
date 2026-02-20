@@ -13,8 +13,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Global Controller Instance (injected from main/init)
-var GlobalMemoryController *memory.Controller
+// Global ToolKit Instance (injected from tools/init.go)
+var GlobalMemoryToolKit *memory.ToolKit
 
 // ListHistory 顯示所有儲存過的 Session 簡述
 func ListHistory() {
@@ -50,17 +50,15 @@ func CheckAndSummarize(s *Session, modelName string, systemPrompt string) {
 		return
 	}
 
-	// 1. Trigger Memory Skills (The New Way)
-	if GlobalMemoryController != nil {
-		// Extract recent user messages
-		// For simplicity, we just take the last user message or a window
-		// TODO: Better context window selection
+	// 1. Trigger Memory ToolKit (The New Way)
+	if GlobalMemoryToolKit != nil {
 		lastMsg := s.Messages[len(s.Messages)-1]
 		if lastMsg.Role == "user" {
-			// Trigger Controller
-			logs, _ := GlobalMemoryController.ProcessChatHistory(lastMsg.Content)
-			if len(logs) > 0 {
-				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Render("\n🧠 [Memory Skills] " + strings.Join(logs, " | ")))
+			// 寫入今日日誌
+			if err := GlobalMemoryToolKit.WriteToday(lastMsg.Content); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️ [Memory] WriteToday 失敗: %v\n", err)
+			} else {
+				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Render("\n🧠 [Memory] 已記錄至今日日誌"))
 			}
 		}
 	}
@@ -111,20 +109,16 @@ func sessionToText(s *Session) string {
 	return sb.String()
 }
 
-// saveToKnowledgeBase 輔助函式：存入 Markdown 知識庫
+// saveToKnowledgeBase 輔助函式：存入長期記憶
 func saveToKnowledgeBase(summary string) error {
-	home, _ := os.Getwd()
-	// 優先檢查根目錄是否已有 knowledge.md (使用者習慣放根目錄)
-	rootKnowledge := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-
-	if _, err := os.Stat(rootKnowledge); err == nil {
-		path = rootKnowledge
-	} else {
-		// 確保目錄存在
-		dir := filepath.Dir(path)
-		_ = os.MkdirAll(dir, 0755)
+	if GlobalMemoryToolKit != nil {
+		return GlobalMemoryToolKit.WriteLongTerm("summarize", summary)
 	}
+
+	// Fallback: 直接寫入檔案
+	home, _ := os.Getwd()
+	path := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -132,7 +126,7 @@ func saveToKnowledgeBase(summary string) error {
 	}
 	defer f.Close()
 
-	content := fmt.Sprintf("\n\n## 📝 歸納日期: %s\n%s\n---\n",
+	content := fmt.Sprintf("\n\n## [summarize] %s\n%s\n---\n",
 		time.Now().Format("2006-01-02 15:04"), summary)
 
 	_, err = f.WriteString(content)

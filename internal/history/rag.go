@@ -9,40 +9,54 @@ import (
 	"github.com/asccclass/pcai/llms/ollama"
 )
 
-// GetRAGEnhancedPrompt 讀取知識庫內容，產生增強型的 System Prompt
-// 這能讓 AI 記起超過 Context Window 限制的長期資訊
+// GetRAGEnhancedPrompt 載入長期記憶，增強 System Prompt
 func GetRAGEnhancedPrompt() string {
+	// 使用 ToolKit 載入
+	if GlobalMemoryToolKit != nil {
+		bootstrap, err := GlobalMemoryToolKit.LoadBootstrap()
+		if err == nil && bootstrap != "" {
+			if len(bootstrap) > 4000 {
+				bootstrap = bootstrap[:4000] + "\n...(已截斷)"
+			}
+			return "\n\n---\n以下是你的長期記憶，可用於回答問題：\n" + bootstrap
+		}
+	}
+
+	// Fallback: 直接讀取檔案
 	home, _ := os.Getwd()
-	// 優先檢查根目錄
-	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		path = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	}
-
-	content, err := os.ReadFile(path)
+	// 嘗試 MEMORY.md
+	path := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
+	data, err := os.ReadFile(path)
 	if err != nil {
-		// 如果檔案不存在，回傳空字串，不影響正常對話
-		return ""
+		// 向下相容：嘗試 knowledge.md
+		path = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+		data, err = os.ReadFile(path)
+		if err != nil {
+			return "" // 無記憶
+		}
 	}
 
-	// 只取最後 2000 個字元，避免 System Prompt 過長導致模型混亂
-	text := string(content)
-	if len(text) > 2000 {
-		text = text[len(text)-2000:]
+	content := string(data)
+	if len(content) > 4000 {
+		content = content[:4000] + "\n...(已截斷)"
 	}
-
-	return fmt.Sprintf("\n\n--- 長期記憶知識庫 (之前的歸納內容) ---\n%s\n------------------\n", text)
+	return "\n\n---\n以下是你的長期記憶，可用於回答問題：\n" + content
 }
 
-// ClearKnowledgeBase 清空長期記憶檔案
+// ClearKnowledgeBase 清除長期記憶檔案
 func ClearKnowledgeBase() error {
 	home, _ := os.Getwd()
-	// 優先檢查根目錄
-	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		path = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+	// 嘗試刪除 MEMORY.md
+	memoryPath := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
+	if err := os.Remove(memoryPath); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	return os.Remove(path)
+	// 向下相容：也嘗試刪除 knowledge.md
+	legacyPath := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+	if err := os.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // GetSummaryFromAI 呼叫 AI 進行單次總結 (用於存檔前的手動呼叫或自動排程)
