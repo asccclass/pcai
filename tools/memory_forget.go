@@ -1,31 +1,23 @@
-// 由於刪除時間可能比較慢，所以可以放到背景執行
 package tools
 
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/asccclass/pcai/internal/memory"
-	"github.com/asccclass/pcai/internal/scheduler"
-
 	"github.com/ollama/ollama/api"
 )
 
+// MemoryForgetTool 永久刪除記憶
 type MemoryForgetTool struct {
-	scheduler    *scheduler.Manager // 注入 Scheduler
-	manager      *memory.Manager
-	markdownPath string
-	fileMutex    sync.Mutex // 互斥鎖：確保同一時間只有一個人在改檔案
+	toolkit *memory.ToolKit
 }
 
-func NewMemoryForgetTool(m *memory.Manager, s *scheduler.Manager, mdPath string) *MemoryForgetTool {
-	return &MemoryForgetTool{
-		manager:      m,
-		scheduler:    s,
-		markdownPath: mdPath,
-	}
+func NewMemoryForgetTool(tk *memory.ToolKit) *MemoryForgetTool {
+	return &MemoryForgetTool{toolkit: tk}
 }
 
 func (t *MemoryForgetTool) Name() string {
@@ -37,13 +29,13 @@ func (t *MemoryForgetTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        "memory_forget",
-			Description: "用於永久刪除記憶。這會同時從向量資料庫與原始檔案中移除資料。當使用者要求「忘記」、「刪除」某事時使用。",
+			Description: "用於永久刪除記憶。當使用者要求「忘記」、「刪除」某事時使用。會從 MEMORY.md 中移除匹配的段落。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
 					"content": {
 						"type": "string",
-						"description": "要刪除的記憶內容原文。必須儘可能精確匹配原始記憶。"
+						"description": "要刪除的記憶內容關鍵字。會搜尋並移除包含此關鍵字的整個段落。"
 					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)
@@ -61,28 +53,46 @@ func (t *MemoryForgetTool) Run(argsJSON string) (string, error) {
 	var args struct {
 		Content string `json:"content"`
 	}
-	// 清洗 JSON
 	cleanJSON := strings.Trim(argsJSON, "`json\n ")
 	if err := json.Unmarshal([]byte(cleanJSON), &args); err != nil {
 		return "", fmt.Errorf("參數錯誤: %w", err)
 	}
 
-	// 同步執行：刪除向量資料庫 (RAM/JSON)
-	// 這一步必須馬上做，確保 Agent 下一句話不會產生幻覺
-	_, err := t.manager.DeleteByContent(args.Content)
-	if err != nil {
-		return "", fmt.Errorf("資料庫刪除錯誤: %w", err)
-	}
-	// 非同步操作：建立背景任務並派發給 Scheduler
-	job := &memory.FileDeletionJob{
-		FilePath: t.markdownPath,
-		Content:  args.Content,
-		Mutex:    &t.fileMutex,
+	if args.Content == "" {
+		return "錯誤: 刪除關鍵字不能為空", nil
 	}
 
-	// 假設 scheduler.Add 接受 tasks.FileDeletionJob
-	if err := t.scheduler.AddBackgroundTask(job); err != nil {
-		return "已從短期記憶移除，但背景同步任務排程失敗。", nil
+	// 從 MEMORY.md 中搜尋並刪除包含關鍵字的段落
+	mgr := t.toolkit.Manager()
+	memoryPath := filepath.Join(mgr.Config().WorkspaceDir, "MEMORY.md")
+
+	data, err := os.ReadFile(memoryPath)
+	if err != nil {
+		return "記憶檔案不存在或無法讀取", nil
 	}
-	return "我已經忘記這件事了，後台正在同步清理您的原始檔案。", nil
+
+	original := string(data)
+	sections := strings.Split(original, "\n---\n")
+	var kept []string
+	removed := 0
+
+	for _, section := range sections {
+		if strings.Contains(strings.ToLower(section), strings.ToLower(args.Content)) {
+			removed++
+		} else {
+			kept = append(kept, section)
+		}
+	}
+
+	if removed == 0 {
+		return fmt.Sprintf("未找到包含 \"%s\" 的記憶段落。", args.Content), nil
+	}
+
+	// 寫回
+	newContent := strings.Join(kept, "\n---\n")
+	if err := os.WriteFile(memoryPath, []byte(newContent), 0644); err != nil {
+		return "", fmt.Errorf("寫入失敗: %w", err)
+	}
+
+	return fmt.Sprintf("🗑️ 已刪除 %d 個包含 \"%s\" 的記憶段落。", removed, args.Content), nil
 }

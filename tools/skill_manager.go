@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/asccclass/pcai/internal/core"
-	"github.com/asccclass/pcai/skills"
+	"github.com/asccclass/pcai/internal/skillloader"
 	dclient "github.com/docker/docker/client"
 )
 
@@ -115,6 +115,41 @@ func (m *SkillManager) RegisterSkill(name, path string) error {
 	return os.WriteFile(m.DBPath, newData, 0644)
 }
 
+// LoadLocalSkills 掃描指定目錄載入 SKILL.md (向下相容)
+func (m *SkillManager) LoadLocalSkills(dir string) error {
+	dynamicSkills, err := skillloader.LoadSkills(dir)
+	if err != nil {
+		return fmt.Errorf("載入本地技能失敗: %v", err)
+	}
+
+	count := 0
+	for _, ds := range dynamicSkills {
+		toolStr := skillloader.NewDynamicTool(ds, m.Registry, m.DockerClient)
+		m.Registry.RegisterWithPriority(toolStr, 10) // Skills 優先於 Tools
+		fmt.Printf("✅ [SkillManager] Loaded local skill: %s (%s)\n", ds.Name, ds.Description)
+		count++
+	}
+	fmt.Printf("📂 [SkillManager] Loaded %d local skills from %s\n", count, dir)
+	return nil
+}
+
+// Reload 重新載入所有技能 (Registry + Local)
+func (m *SkillManager) Reload() error {
+	fmt.Println("🔄 [SkillManager] Reloading skillloader...")
+
+	// 1. Reload from Registry (Persistent)
+	if err := m.LoadAll(); err != nil {
+		return err
+	}
+
+	// 2. Reload local skills (from BaseDir)
+	if err := m.LoadLocalSkills(m.BaseDir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // restoreSkill 負責載入並註冊單個技能
 func (m *SkillManager) restoreSkill(path string) error {
 	// 邏輯類似 SkillInstaller 的載入部分
@@ -125,15 +160,15 @@ func (m *SkillManager) restoreSkill(path string) error {
 	// 但 SkillInstaller 目前是 "安裝時轉換"。
 	// 如果安裝後的目錄結構包含 skill.json，我們需要再讀一次。
 
-	// 優化：統一使用 `skills.LoadSkills`。
-	// 但 `skills.LoadSkills` 目前只讀 `SKILL.md`。
+	// 優化：統一使用 `skillloader.LoadSkills`。
+	// 但 `skillloader.LoadSkills` 目前只讀 `SKILL.md`。
 	// 如果 `SkillInstaller` 在安裝時產生了 `SKILL.md`，那就完美了。
 	// 如果 `SkillInstaller` 只是保留原樣 (可能只有 skill.json)，那我們需要在這裡處理 skill.json。
 
 	// 為了穩健，我們在這裡複製 SkillInstaller 的讀取邏輯，或者重構 `skills` package 支援 skill.json。
 	// 鑑於 `skills` 是獨立模組，我們在 `tools` 層處理 `skill.json`。
 
-	var def *skills.SkillDefinition
+	var def *skillloader.SkillDefinition
 
 	configPath := filepath.Join(path, "skill.json")
 	if _, err := os.Stat(configPath); err == nil {
@@ -153,18 +188,18 @@ func (m *SkillManager) restoreSkill(path string) error {
 			return fmt.Errorf("解析 skill.json 失敗: %v", err)
 		}
 
-		def = &skills.SkillDefinition{
+		def = &skillloader.SkillDefinition{
 			Name:        config.Name,
 			Description: config.Description,
 			Command:     config.Command,
 			Image:       config.Image,
 			RepoPath:    path,
 		}
-		def.Params = skills.ParseParams(def.Command)
+		def.Params = skillloader.ParseParams(def.Command)
 
 	} else {
 		// 嘗試載入 SKILL.md
-		loadedSkills, err := skills.LoadSkills(path)
+		loadedSkills, err := skillloader.LoadSkills(path)
 		if err != nil || len(loadedSkills) == 0 {
 			return fmt.Errorf("目錄 %s 無效的技能定義", path)
 		}
@@ -172,7 +207,7 @@ func (m *SkillManager) restoreSkill(path string) error {
 	}
 
 	// 註冊
-	dynamicTool := skills.NewDynamicTool(def, m.Registry, m.DockerClient)
+	dynamicTool := skillloader.NewDynamicTool(def, m.Registry, m.DockerClient)
 	m.Registry.RegisterWithPriority(dynamicTool, 10) // Skills 優先於 Tools
 
 	return nil

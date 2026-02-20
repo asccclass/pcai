@@ -2,7 +2,6 @@
 package tools
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log"
@@ -21,7 +20,6 @@ import (
 	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/scheduler"
-	"github.com/asccclass/pcai/llms/ollama"
 	"github.com/asccclass/pcai/skills"
 	browserskill "github.com/asccclass/pcai/skills/browser"
 	dclient "github.com/docker/docker/client"
@@ -29,55 +27,11 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-// SyncMemory 讀取 Markdown 檔案，將「新出現」的內容加入記憶庫
-func SyncMemory(mem *memory.Manager, filePath string) {
-	fmt.Printf("  ↳ [Sync] 正在檢查檔案變更: %s ...\n", filePath)
+// GlobalMemoryToolKit 全域記憶工具套件（供 history 包等使用）
+var GlobalMemoryToolKit *memory.ToolKit
 
-	file, err := os.Open(filePath)
-	if os.IsNotExist(err) {
-		return
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	var buffer strings.Builder
-	newCount := 0
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			content := strings.TrimSpace(buffer.String())
-
-			// 關鍵修改：先檢查 Exists，不存在才 Add
-			if content != "" && !mem.Exists(content) {
-				fmt.Printf("    ↳ [New] 正在嵌入: %s...\n", content[:10])
-				err := mem.Add(content, []string{"file_sync"})
-				if err != nil {
-					fmt.Println("嵌入失敗:", err)
-				} else {
-					newCount++
-				}
-			}
-			buffer.Reset()
-		} else {
-			buffer.WriteString(line + "\n")
-		}
-	}
-	// 處理最後一段
-	if buffer.Len() > 0 {
-		content := strings.TrimSpace(buffer.String())
-		if content != "" && !mem.Exists(content) {
-			mem.Add(content, []string{"file_sync"})
-			newCount++
-		}
-	}
-
-	if newCount > 0 {
-		fmt.Printf("  ↳ [Sync] 同步完成，新增了 %d 筆記憶。\n", newCount)
-	} else {
-		fmt.Println("  ↳ [Sync] 檔案無變更，記憶庫已是最新狀態。")
-	}
-}
+// GlobalDB 全域 SQLite 資料庫實例（供短期記憶搜尋等使用）
+var GlobalDB *database.DB
 
 // 全域註冊表實例
 var DefaultRegistry = core.NewRegistry()
@@ -101,6 +55,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	if err != nil {
 		fmt.Printf("⚠️ [InitRegistry] 無法啟動資料庫: %v\n", err)
 	}
+	GlobalDB = sqliteDB // 導出供外部使用
 	// Note: We do NOT close the DB here because it needs to persist for the lifetime of the application.
 	// defer sqliteDB.Close()
 
@@ -202,44 +157,42 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 
 	// 建立 Skills
 
-	// 初始化記憶體管理器 (RAG)
-	// 定義路徑
+	// 初始化記憶系統 (OpenClaw ToolKit)
 	kbDir := filepath.Join(home, "botmemory", "knowledge")
-	jsonPath := filepath.Join(kbDir, "memory_store.json") // 向量資料庫
-	mdPath := filepath.Join(kbDir, "knowledge.md")        // 原始 Markdown 檔案
+	_ = os.MkdirAll(kbDir, 0750)
 
-	// 建立 Embedder
-	embedder := memory.NewOllamaEmbedder(os.Getenv("OLLAMA_HOST"), "mxbai-embed-large")
-
-	// 建立 Manager
-	memManager := memory.NewManager(jsonPath, embedder)
-
-	// 建立 PendingStore (暫存待確認記憶，24小時過期)
-	pendingStore := memory.NewPendingStore(24 * time.Hour)
-
-	// SyncMemory 應該讀取 Markdown 檔案，而不是 JSON 檔案
-	fmt.Println("✅ [Scheduler] 正在初始化記憶庫同步...")
-	SyncMemory(memManager, mdPath)
-
-	// 1. 初始化記憶模組
-	memorySkillsDir := filepath.Join(home, "skills", "memory_skills")
-	// Ensure dir exists
-	_ = os.MkdirAll(memorySkillsDir, 0755)
-
-	memSkillMgr := memory.NewSkillManager(memorySkillsDir)
-	if err := memSkillMgr.LoadSkills(); err != nil {
-		fmt.Printf("⚠️ [Memory] Failed to load memory skills: %v\n", err)
+	memCfg := memory.MemoryConfig{
+		WorkspaceDir: kbDir,
+		StateDir:     kbDir,
+		AgentID:      "pcai",
+		Search: memory.SearchConfig{
+			Provider:  "ollama",
+			Model:     "mxbai-embed-large",
+			OllamaURL: os.Getenv("OLLAMA_HOST"),
+			Hybrid: memory.HybridConfig{
+				Enabled:             true,
+				VectorWeight:        0.7,
+				TextWeight:          0.3,
+				CandidateMultiplier: 4,
+			},
+			Cache: memory.CacheConfig{
+				Enabled:    true,
+				MaxEntries: 50000,
+			},
+			Sync: memory.SyncConfig{
+				Watch: true,
+			},
+		},
 	}
 
-	// Wrapper for ChatStream to match LLMProvider signature
-	memExecutor := memory.NewMemoryExecutor(ollama.ChatStream, cfg.Model)
-
-	// [FIX] Pass pendingStore to Controller
-	memController := memory.NewController(memManager, memSkillMgr, memExecutor, pendingStore)
-
-	// Inject into history package
-	history.GlobalMemoryController = memController
-	fmt.Printf("✅ [Memory] Controller initialized with %d skills\n", len(memSkillMgr.Skills))
+	memToolKit, err := memory.NewToolKit(memCfg)
+	if err != nil {
+		fmt.Printf("⚠️ [Memory] ToolKit 初始化失敗: %v\n", err)
+	} else {
+		GlobalMemoryToolKit = memToolKit
+		history.GlobalMemoryToolKit = memToolKit
+		fmt.Printf("✅ [Memory] ToolKit 初始化完成 (索引 %d 個 chunks)\n", memToolKit.ChunkCount())
+	}
 
 	// 檔案系統管理器，設定 "Sandbox" 根目錄
 	workspacePath := os.Getenv("WORKSPACE_PATH")
@@ -274,12 +227,14 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 
 	// 基礎工具
 	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
-	registry.Register(&KnowledgeSearchTool{})
+	if memToolKit != nil {
+		registry.Register(NewKnowledgeSearchTool(memToolKit))
+		registry.Register(NewKnowledgeAppendTool(memToolKit))
+	}
 	registry.Register(&WebFetchTool{})
 	registry.Register(&WebSearchTool{})
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
-	registry.Register(&KnowledgeAppendTool{})
 	registry.Register(&VideoConverterTool{})
 	// registry.Register(&EmailTool{}) // Replaced by dynamic skill
 	registry.Register(NewGoogleTool())
@@ -300,12 +255,13 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		registry.Register(pyTool)
 	}
 
-	// 記憶相關工具
-	registry.Register(NewMemoryTool(memManager))                              // 搜尋工具
-	registry.Register(NewMemorySaveTool(memManager, pendingStore, mdPath))    // 儲存工具 (暫存待確認)
-	registry.Register(NewMemoryConfirmTool(memManager, pendingStore, mdPath)) // 確認/拒絕工具
-	// 遺忘工具 (注入 memManager, schedMgr, mdPath)	// 這樣它才能同時操作資料庫並排程刪除檔案
-	registry.Register(NewMemoryForgetTool(memManager, schedMgr, mdPath))
+	// 記憶相關工具（使用新 ToolKit API）
+	if memToolKit != nil {
+		registry.Register(NewMemoryTool(memToolKit))       // 搜尋工具
+		registry.Register(NewMemorySaveTool(memToolKit))   // 儲存工具
+		registry.Register(NewMemoryGetTool(memToolKit))    // 讀取工具
+		registry.Register(NewMemoryForgetTool(memToolKit)) // 遺忘工具
+	}
 
 	// 排程工具 (讓 LLM 可以設定 Cron)
 	registry.Register(&SchedulerTool{Mgr: schedMgr})
@@ -351,16 +307,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		log.Printf("⚠️ [Skills] LoadAll failed: %v", err)
 	}
 
-	// 2. 掃描目錄載入手動新增的 SKILL.md (向下相容)
-	dynamicSkills, err := skills.LoadSkills(skillsDir)
-	if err != nil {
-		log.Printf("⚠️ [Skills] 無法載入 skills.md: %v", err)
-	} else {
-		for _, ds := range dynamicSkills {
-			toolStr := skills.NewDynamicTool(ds, registry, dockerCli)
-			registry.RegisterWithPriority(toolStr, 10) // Skills 優先於 Tools
-			fmt.Printf("✅ [Skills] Loaded (priority): %s (%s)\n", ds.Name, ds.Description)
-		}
+	// 2. 掃描目錄載入手動新增的 SKILL.md
+	if err := skillManager.LoadLocalSkills(skillsDir); err != nil {
+		log.Printf("⚠️ [Skills] LoadLocalSkills failed: %v", err)
 	}
 
 	// 新增 Skill 腳手架建立工具 (Meta-Tool)
@@ -372,9 +321,15 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		BaseDir: skillsDir,
 	})
 
+	// 註冊 Skills Reload 工具 (New)
+	registry.Register(&ReloadSkillsTool{Manager: skillManager})
+
 	// 註冊 Skill 骨架產生器 & 規格驗證器
 	registry.Register(&SkillScaffoldTool{SkillsDir: skillsDir})
 	registry.Register(&SkillValidateTool{SkillsDir: skillsDir})
+
+	// [NEW] 自動技能生成工具
+	registry.Register(NewSkillGeneratorTool(client, cfg.Model, skillsDir))
 
 	// [FIX] 註冊 read_email 任務類型 (解決 Scheduler Warning)
 	schedMgr.RegisterTaskType("read_email", func() {
@@ -571,6 +526,11 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 				fmt.Printf("📝 [ShortTermMemory] 已存入 [%s] (%d 字元, TTL=%d天)\n", source, len(content), ttlDays)
 			}
 		})
+
+		// [MEMORY-FIRST] 設定記憶預搜尋回調
+		if sqliteDB != nil {
+			adapter.SetMemorySearchCallback(agent.BuildMemorySearchFunc(sqliteDB))
+		}
 
 		// 2. 建立 Dispatcher
 		// 注意：Dispatcher 目前綁定 TelegramAdminID，若 WhatsApp 來源不同管理者，可能需擴充 Dispatcher

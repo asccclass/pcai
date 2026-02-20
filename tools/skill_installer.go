@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/asccclass/pcai/skills"
+	"github.com/asccclass/pcai/internal/skillloader"
 	"github.com/ollama/ollama/api"
 )
 
@@ -84,7 +84,7 @@ func (i *SkillInstaller) Run(argsJSON string) (string, error) {
 		Parameters  json.RawMessage `json:"parameters"`
 	}
 
-	var def *skills.SkillDefinition
+	var def *skillloader.SkillDefinition
 
 	configPath := filepath.Join(targetPath, "skill.json")
 	if _, err := os.Stat(configPath); err == nil {
@@ -98,7 +98,7 @@ func (i *SkillInstaller) Run(argsJSON string) (string, error) {
 		}
 
 		// 建構各定義
-		def = &skills.SkillDefinition{
+		def = &skillloader.SkillDefinition{
 			Name:        config.Name,
 			Description: config.Description,
 			Command:     config.Command,
@@ -107,11 +107,11 @@ func (i *SkillInstaller) Run(argsJSON string) (string, error) {
 		}
 
 		// 解析參數
-		def.Params = skills.ParseParams(def.Command)
+		def.Params = skillloader.ParseParams(def.Command)
 
 	} else {
 		// 嘗試載入 SKILL.md
-		loadedSkills, err := skills.LoadSkills(targetPath)
+		loadedSkills, err := skillloader.LoadSkills(targetPath)
 		if err != nil || len(loadedSkills) == 0 {
 			return "", fmt.Errorf("安裝成功但無法在 %s 找到有效的技能定義 (skill.json or SKILL.md)", targetPath)
 		}
@@ -119,7 +119,7 @@ func (i *SkillInstaller) Run(argsJSON string) (string, error) {
 	}
 
 	// 4. Register & Persist
-	dynamicTool := skills.NewDynamicTool(def, i.Manager.Registry, i.Manager.DockerClient)
+	dynamicTool := skillloader.NewDynamicTool(def, i.Manager.Registry, i.Manager.DockerClient)
 	i.Manager.Registry.Register(dynamicTool)
 
 	// 5. 寫入持久化清單

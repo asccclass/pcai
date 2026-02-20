@@ -1,16 +1,23 @@
 package tools
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"fmt"
 	"strings"
 
+	"github.com/asccclass/pcai/internal/memory"
 	"github.com/ollama/ollama/api"
 )
 
-type KnowledgeSearchTool struct{}
+// KnowledgeSearchTool 搜尋長期記憶知識庫（使用混合搜尋）
+type KnowledgeSearchTool struct {
+	toolkit *memory.ToolKit
+}
+
+func NewKnowledgeSearchTool(tk *memory.ToolKit) *KnowledgeSearchTool {
+	return &KnowledgeSearchTool{toolkit: tk}
+}
 
 func (t *KnowledgeSearchTool) Name() string { return "knowledge_search" }
 
@@ -19,7 +26,7 @@ func (t *KnowledgeSearchTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        "knowledge_search",
-			Description: "搜尋長期記憶知識庫 (knowledge.md) 中的內容。",
+			Description: "搜尋長期記憶知識庫中的內容。使用混合搜尋（BM25 + 向量）。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
@@ -40,80 +47,34 @@ func (t *KnowledgeSearchTool) Definition() api.Tool {
 	}
 }
 
-// ExtractMarkdownBlock 根據關鍵字尋找並回傳完整的區塊
-func ExtractMarkdownBlock(filePath string, query string) (string, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-
-	var foundBlocks []string
-	lastHeaderIndex := -1
-
-	for i, line := range lines {
-		// 追蹤最近的標題位置 (假設我們以 ## 或 ### 為區塊基準)
-		if strings.HasPrefix(line, "##") {
-			lastHeaderIndex = i
-		}
-
-		// 發現關鍵字
-		if strings.Contains(strings.ToLower(line), strings.ToLower(query)) {
-			start := lastHeaderIndex
-			if start == -1 {
-				start = i // 如果前面沒標題，就從該行開始
-			}
-
-			// 尋找區塊結束點 (下一個相同或更高層級的標題)
-			end := len(lines)
-			for j := i + 1; j < len(lines); j++ {
-				if strings.HasPrefix(lines[j], "##") {
-					end = j
-					break
-				}
-			}
-
-			// 提取並組合區塊內容
-			block := strings.Join(lines[start:end], "\n")
-
-			// 避免重複添加同一個區塊
-			isDuplicate := false
-			for _, b := range foundBlocks {
-				if b == block {
-					isDuplicate = true
-					break
-				}
-			}
-			if !isDuplicate {
-				foundBlocks = append(foundBlocks, block)
-			}
-		}
-	}
-
-	if len(foundBlocks) == 0 {
-		return "找不到包含關鍵字的區塊。", nil
-	}
-
-	return strings.Join(foundBlocks, "\n\n---\n\n"), nil
-}
-
 func (t *KnowledgeSearchTool) Run(argsJSON string) (string, error) {
 	var args struct {
 		Query string `json:"query"`
 	}
-	json.Unmarshal([]byte(argsJSON), &args)
-
-	home, _ := os.Getwd() // os.Executable()  返回執行檔案的絕對路徑。
-	path := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	result, err := ExtractMarkdownBlock(path, args.Query)
-	if err != nil {
-		return "目前沒有長期記憶紀錄。", nil
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", err
 	}
-	return "找到以下相關知識區塊：\n" + result, nil // "搜尋結果"
+
+	if args.Query == "" {
+		return "錯誤: 搜尋關鍵字不能為空。", nil
+	}
+
+	ctx := context.Background()
+	resp, err := t.toolkit.MemorySearch(ctx, args.Query)
+	if err != nil {
+		return "", fmt.Errorf("搜尋失敗: %w", err)
+	}
+
+	if len(resp.Results) == 0 {
+		return "目前沒有找到相關的長期記憶。", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("找到 %d 個相關知識區塊：\n", len(resp.Results)))
+	for i, res := range resp.Results {
+		sb.WriteString(fmt.Sprintf("\n--- 區塊 %d (分數: %.2f) ---\n", i+1, res.FinalScore))
+		sb.WriteString(res.Chunk.Content)
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
 }
