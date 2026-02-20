@@ -3,10 +3,10 @@
 *.txt
 *.x
 *.log
+*.bak
 credentials.json
 token.json
 envfile
-botmemory/*
 user_workspace/*
 sandbox/*
 temp_*

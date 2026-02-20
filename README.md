@@ -129,6 +129,14 @@ PCAI 內建兩個 Skill 開發工具，使用者或 LLM 皆可直接呼叫：
 - `export/`: PDF 匯出邏輯。
 - `assets/`: 字型與靜態資源。
 
+## 功能測試
+
+```
+go test ./systemtesting/... -v
+```
+
+
+
 ## 🤝 貢獻
 
 歡迎提交 Pull Request 或 Issue！
