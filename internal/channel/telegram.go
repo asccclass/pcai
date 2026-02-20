@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
+
+	"time"
 
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
+	"github.com/valyala/fasthttp"
 )
 
 // Envelope 封裝了跨平台的統一訊息格式
@@ -27,13 +31,50 @@ type TelegramChannel struct {
 	stopPolling context.CancelFunc
 }
 
+// customLogger 攔截特定錯誤 (如 409 Conflict)
+type customLogger struct {
+	debug bool
+}
+
+func (l *customLogger) Debugf(format string, args ...interface{}) {
+	if l.debug {
+		log.Printf("[Telego Debug] "+format, args...)
+	}
+}
+
+func (l *customLogger) Errorf(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	// 偵測 Conflict 錯誤
+	if strings.Contains(msg, "Conflict: terminated by other getUpdates request") {
+		fmt.Println("\n⚠️  [Telegram] 偵測到另一重複實例！本實例將自動停止以避免衝突。")
+		fmt.Println("👉 請檢查是否開啟了多個終端機視窗，或有背景程序未關閉。")
+		os.Exit(0)
+	}
+	log.Printf("⚠️ [Telego Error] %s", msg)
+}
+
 // NewTelegramChannel 初始化機器人
 func NewTelegramChannel(token string, debug bool) (*TelegramChannel, error) {
 	// 使用預設設定初始化 Bot
-	options := []telego.BotOption{}
-	if debug {
-		options = append(options, telego.WithDefaultDebugLogger())
+	options := []telego.BotOption{
+		telego.WithLogger(&customLogger{debug: debug}),
 	}
+
+	// [FIX] 使用自定義的 fasthttp client，避免 "connection closed before returning first response byte" 錯誤
+	// 這是因為預設 client 的 ReadTimeout 可能比 Long Polling Timeout 短
+	fastHttpClient := &fasthttp.Client{
+		ReadTimeout:                   90 * time.Second, // 比 Long Polling Timeout (60s) 長
+		WriteTimeout:                  90 * time.Second,
+		MaxIdleConnDuration:           90 * time.Second,
+		NoDefaultUserAgentHeader:      true,
+		DisableHeaderNamesNormalizing: true,
+		Dial: (&fasthttp.TCPDialer{
+			Concurrency:      4096,
+			DNSCacheDuration: time.Hour,
+		}).Dial,
+	}
+
+	options = append(options, telego.WithFastHTTPClient(fastHttpClient))
 
 	bot, err := telego.NewBot(token, options...)
 	if err != nil {
@@ -97,7 +138,7 @@ func (t *TelegramChannel) Listen(handler func(Envelope)) {
 // Stop 停止長輪詢
 func (t *TelegramChannel) Stop() {
 	if t.stopPolling != nil {
-		fmt.Println("🛑 [Telegram] 正在停止頻道...")
+		fmt.Println("🛑 [Telegram] 已停止頻道...")
 		t.stopPolling()
 	}
 }
