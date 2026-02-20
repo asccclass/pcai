@@ -23,6 +23,7 @@ type AgentAdapter struct {
 	debug             bool
 	logger            *agent.SystemLogger          // 共用日誌
 	onShortTermMemory func(source, content string) // 短期記憶回調
+	onMemorySearch    func(query string) string    // 記憶預搜尋回調
 }
 
 // NewAgentAdapter 建立新的 Adapter
@@ -41,6 +42,11 @@ func NewAgentAdapter(registry *core.Registry, modelName, systemPrompt string, de
 // SetShortTermMemoryCallback 設定短期記憶回調
 func (a *AgentAdapter) SetShortTermMemoryCallback(fn func(source, content string)) {
 	a.onShortTermMemory = fn
+}
+
+// SetMemorySearchCallback 設定記憶預搜尋回調
+func (a *AgentAdapter) SetMemorySearchCallback(fn func(query string) string) {
+	a.onMemorySearch = fn
 }
 
 // Process 實作 Processor 介面
@@ -146,6 +152,11 @@ func (a *AgentAdapter) getOrCreateAgent(sessionID string) *agent.Agent {
 	// 設定短期記憶回調
 	if a.onShortTermMemory != nil {
 		newAgent.OnShortTermMemory = a.onShortTermMemory
+	}
+
+	// 設定記憶預搜尋回調
+	if a.onMemorySearch != nil {
+		newAgent.OnMemorySearch = a.onMemorySearch
 	}
 
 	// 設定 Callbacks (為了 debug)

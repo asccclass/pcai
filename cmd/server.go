@@ -43,22 +43,45 @@ func runServe(cmd *cobra.Command, args []string) {
 		templateRoot = "www/template"
 	}
 
-	// 3. 初始化記憶管理器
+	// 3. 初始化記憶系統 (OpenClaw ToolKit)
 	home, _ := os.Getwd()
 	kbDir := filepath.Join(home, "botmemory", "knowledge")
-	jsonPath := filepath.Join(kbDir, "memory_store.json")
-
-	// 確保目錄存在
-	_ = os.MkdirAll(kbDir, 0755)
+	_ = os.MkdirAll(kbDir, 0750)
 
 	ollamaHost := os.Getenv("OLLAMA_HOST")
 	if ollamaHost == "" {
 		ollamaHost = "http://localhost:11434"
 	}
-	embedder := memory.NewOllamaEmbedder(ollamaHost, "mxbai-embed-large")
-	memManager := memory.NewManager(jsonPath, embedder)
 
-	fmt.Printf("✅ [Memory] 載入 %d 筆記憶\n", memManager.Count())
+	memCfg := memory.MemoryConfig{
+		WorkspaceDir: kbDir,
+		StateDir:     kbDir,
+		AgentID:      "pcai",
+		Search: memory.SearchConfig{
+			Provider:  "ollama",
+			Model:     "mxbai-embed-large",
+			OllamaURL: ollamaHost,
+			Hybrid: memory.HybridConfig{
+				Enabled:             true,
+				VectorWeight:        0.7,
+				TextWeight:          0.3,
+				CandidateMultiplier: 4,
+			},
+			Cache: memory.CacheConfig{
+				Enabled:    true,
+				MaxEntries: 50000,
+			},
+		},
+	}
+
+	memToolKit, err := memory.NewToolKit(memCfg)
+	if err != nil {
+		fmt.Printf("❌ 無法初始化記憶系統: %v\n", err)
+		return
+	}
+	defer memToolKit.Close()
+
+	fmt.Printf("✅ [Memory] ToolKit 初始化完成 (索引 %d 個 chunks)\n", memToolKit.ChunkCount())
 
 	// 4. 建立 SherryServer
 	server, err := SherryServer.NewServer(":"+port, documentRoot, templateRoot)
@@ -71,7 +94,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	router := http.NewServeMux()
 
 	// 5a. API 路由
-	memHandler := webapi.NewMemoryHandler(memManager)
+	memHandler := webapi.NewMemoryHandler(memToolKit)
 	memHandler.AddRoutes(router)
 
 	// 5b. 靜態檔案服務

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/asccclass/pcai/internal/skillloader"
 	"github.com/joho/godotenv"
 )
 
@@ -97,6 +98,11 @@ func LoadConfig() *Config {
 	} else {
 		CoreSystemPrompt = string(content)
 		fmt.Printf("✅ [Config] 成功載入 System Prompt (%s)\n", soulPath)
+	}
+
+	// [SKILLS SNAPSHOT] 產生技能快照並 prepend 到 System Prompt
+	if snapshot, err := skillloader.GenerateAndSaveSnapshot("skills"); err == nil && snapshot != "" {
+		CoreSystemPrompt = snapshot + "\n\n" + CoreSystemPrompt
 	}
 
 	return &Config{

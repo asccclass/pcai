@@ -80,6 +80,9 @@ func (r *Registry) CallTool(name string, argsJSON string) (string, error) {
 		"run_task":         "manage_cron_job",
 		"cron":             "manage_cron_job",
 		"manage_cron_task": "manage_cron_job",
+		"get_weather":      "get_taiwan_weather",
+		"check_weather":    "get_taiwan_weather",
+		"weather":          "get_taiwan_weather",
 	}
 	if alias, ok := aliasMap[name]; ok {
 		name = alias

@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/asccclass/pcai/internal/core"
@@ -28,6 +29,7 @@ type Agent struct {
 	OnToolCall             func(name, args string)
 	OnToolResult           func(result string)
 	OnShortTermMemory      func(source, content string) // 短期記憶自動存入回調
+	OnMemorySearch         func(query string) string    // 記憶預搜尋回調
 }
 
 // NewAgent 建立一個新的 Agent 實例
@@ -68,6 +70,14 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 	userContent := input
 	if hint := getToolHint(input); hint != "" {
 		userContent = input + "\n\n" + hint
+	}
+
+	// [MEMORY-FIRST] 搜尋記憶，注入相關上下文
+	if a.OnMemorySearch != nil {
+		if memCtx := a.OnMemorySearch(input); memCtx != "" {
+			userContent += "\n\n" + memCtx
+			fmt.Println("💾 [Memory] 記憶命中，已注入上下文")
+		}
 	}
 
 	// 將使用者輸入加入對話歷史
@@ -114,7 +124,13 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		// [FIX] 補救措施：如果 ToolCalls 為空，但 Content 看起來像是 JSON 工具呼叫
 		if len(aiMsg.ToolCalls) == 0 {
 			content := strings.TrimSpace(aiMsg.Content)
-			if strings.HasPrefix(content, "{") && strings.Contains(content, "\"name\"") {
+			// 嘗試抓取 JSON 區塊 (以防前後有文字)
+			start := strings.Index(content, "{")
+			end := strings.LastIndex(content, "}")
+
+			if start != -1 && end != -1 && end > start {
+				jsonStr := content[start : end+1]
+
 				// 嘗試解析這種非標準的 JSON 輸出
 				// 例如: {"type": "function", "name": "fs_append_to_file", "parameters": {...}}
 				var rawCall struct {
@@ -123,39 +139,203 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 					Arguments  *api.ToolCallFunctionArguments `json:"arguments"`
 				}
 
-				// 嘗試抓取 JSON 區塊 (以防前後有文字)
+				if err := json.Unmarshal([]byte(jsonStr), &rawCall); err == nil && rawCall.Name != "" {
+					fmt.Printf("🔍 [Agent] 偵測到原始 JSON 工具呼叫: %s\n", rawCall.Name)
+
+					// 參數相容性處理: 有些模型會用 parameters 代替 arguments
+					var finalArgs api.ToolCallFunctionArguments
+
+					if rawCall.Arguments != nil {
+						finalArgs = *rawCall.Arguments
+					} else if rawCall.Parameters != nil {
+						finalArgs = *rawCall.Parameters
+					} else {
+						// 若皆無，保持 zero value
+						finalArgs = api.ToolCallFunctionArguments{}
+					}
+
+					// 建構標準 ToolCall
+					aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+						Function: api.ToolCallFunction{
+							Name:      rawCall.Name,
+							Arguments: finalArgs,
+						},
+					})
+
+					aiMsg.Content = ""
+					finalResponse = ""
+				}
+			}
+		}
+
+		// [FIX] 補救措施 2：處理 Python 風格的工具呼叫
+		// Llama 有時會輸出 <|python_tag|>get_weather(city="苗栗") 格式
+		// 或在文字中嵌入 function_name(key="value") 格式
+		if len(aiMsg.ToolCalls) == 0 {
+			content := strings.TrimSpace(aiMsg.Content)
+			// 移除 <|python_tag|> 前綴
+			cleaned := content
+			if idx := strings.Index(cleaned, "<|python_tag|>"); idx != -1 {
+				cleaned = strings.TrimSpace(cleaned[idx+len("<|python_tag|>"):])
+			}
+
+			// 匹配 function_name(key=value, key2=value2) 格式 (不限定行首行尾)
+			// 例如: get_weather(city="苗栗") 或嵌入在自然語言文字中
+			pyCallRe := regexp.MustCompile(`(\w+)\((\w+\s*=\s*(?:"[^"]*"|'[^']*'|\S+)(?:\s*,\s*\w+\s*=\s*(?:"[^"]*"|'[^']*'|\S+))*)\)`)
+			if m := pyCallRe.FindStringSubmatch(cleaned); m != nil {
+				funcName := m[1]
+				argsStr := m[2]
+
+				fmt.Printf("🔍 [Agent] 偵測到 Python 風格工具呼叫: %s(%s)\n", funcName, argsStr)
+
+				// 解析 key=value 或 key="value" 參數
+				argsMap := make(map[string]interface{})
+				// 匹配 key="value" 或 key='value' 或 key=value
+				argRe := regexp.MustCompile(`(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))`)
+				for _, am := range argRe.FindAllStringSubmatch(argsStr, -1) {
+					key := am[1]
+					val := am[2] // double-quoted
+					if val == "" {
+						val = am[3] // single-quoted
+					}
+					if val == "" {
+						val = am[4] // unquoted
+					}
+					argsMap[key] = val
+				}
+
+				// 轉換為 api.ToolCallFunctionArguments
+				argsBytes, _ := json.Marshal(argsMap)
+				var finalArgs api.ToolCallFunctionArguments
+				_ = json.Unmarshal(argsBytes, &finalArgs)
+
+				aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+					Function: api.ToolCallFunction{
+						Name:      funcName,
+						Arguments: finalArgs,
+					},
+				})
+
+				aiMsg.Content = ""
+				finalResponse = ""
+			}
+
+		}
+
+		// [FIX] 補救措施 2.5：處理方括號風格的工具呼叫
+		// Llama 有時會輸出 [get_taiwan_weather location="苗栗縣"] 格式
+		if len(aiMsg.ToolCalls) == 0 {
+			content := strings.TrimSpace(aiMsg.Content)
+			// 匹配 [tool_name key="value" key2="value2"] 格式
+			bracketRe := regexp.MustCompile(`\[(\w+)\s+((?:\w+\s*=\s*(?:"[^"]*"|'[^']*'|\S+)\s*)+)\]`)
+			if m := bracketRe.FindStringSubmatch(content); m != nil {
+				funcName := m[1]
+				argsStr := m[2]
+
+				fmt.Printf("🔍 [Agent] 偵測到方括號風格工具呼叫: [%s %s]\n", funcName, argsStr)
+
+				// 解析 key=value 或 key="value" 參數
+				argsMap := make(map[string]interface{})
+				argRe := regexp.MustCompile(`(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))`)
+				for _, am := range argRe.FindAllStringSubmatch(argsStr, -1) {
+					key := am[1]
+					val := am[2] // double-quoted
+					if val == "" {
+						val = am[3] // single-quoted
+					}
+					if val == "" {
+						val = am[4] // unquoted
+					}
+					argsMap[key] = val
+				}
+
+				// 轉換為 api.ToolCallFunctionArguments
+				argsBytes, _ := json.Marshal(argsMap)
+				var finalArgs api.ToolCallFunctionArguments
+				_ = json.Unmarshal(argsBytes, &finalArgs)
+
+				aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+					Function: api.ToolCallFunction{
+						Name:      funcName,
+						Arguments: finalArgs,
+					},
+				})
+
+				aiMsg.Content = ""
+				finalResponse = ""
+			}
+		}
+
+		// [FIX] 補救措施 3：處理自然語言描述 + 非標準參數的模式
+		// 支援的格式:
+		//   (a) 裸 JSON 參數: "我會呼叫 get_taiwan_weather... { "location": "苗栗縣" }"
+		//   (b) URL query string: "get_taiwan_weather?location=苗栗縣"
+		if len(aiMsg.ToolCalls) == 0 {
+			content := strings.TrimSpace(aiMsg.Content)
+
+			// 在文字中搜尋已知工具名稱
+			detectedTool := ""
+			for _, tDef := range toolDefs {
+				if strings.Contains(content, tDef.Function.Name) {
+					detectedTool = tDef.Function.Name
+					break
+				}
+			}
+
+			if detectedTool != "" {
+				var parsed bool
+
+				// (a) 嘗試裸 JSON 參數
 				start := strings.Index(content, "{")
 				end := strings.LastIndex(content, "}")
-				if start != -1 && end != -1 && end > start {
+				if start != -1 && end > start {
 					jsonStr := content[start : end+1]
-					if err := json.Unmarshal([]byte(jsonStr), &rawCall); err == nil && rawCall.Name != "" {
-						fmt.Printf("🔍 [Agent] 偵測到原始 JSON 工具呼叫: %s\n", rawCall.Name)
-
-						// 參數相容性處理: 有些模型會用 parameters 代替 arguments
-						var finalArgs api.ToolCallFunctionArguments
-
-						if rawCall.Arguments != nil {
-							finalArgs = *rawCall.Arguments
-						} else if rawCall.Parameters != nil {
-							finalArgs = *rawCall.Parameters
-						} else {
-							// 若皆無，保持 zero value (假設 api.ToolCallFunctionArguments 是一個 struct，zero value 可用)
-							finalArgs = api.ToolCallFunctionArguments{}
+					var argsMap map[string]interface{}
+					if err := json.Unmarshal([]byte(jsonStr), &argsMap); err == nil {
+						if _, hasName := argsMap["name"]; !hasName {
+							fmt.Printf("🔍 [Agent] 偵測到自然語言工具呼叫: %s + %s\n", detectedTool, jsonStr)
+							argsBytes, _ := json.Marshal(argsMap)
+							var finalArgs api.ToolCallFunctionArguments
+							_ = json.Unmarshal(argsBytes, &finalArgs)
+							aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+								Function: api.ToolCallFunction{
+									Name:      detectedTool,
+									Arguments: finalArgs,
+								},
+							})
+							aiMsg.Content = ""
+							finalResponse = ""
+							parsed = true
 						}
+					}
+				}
 
-						// 建構標準 ToolCall
-						aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
-							Function: api.ToolCallFunction{
-								Name:      rawCall.Name,
-								Arguments: finalArgs,
-							},
-						})
-
-						// 清空 Content 以免重複顯示 JSON 給使用者
-						// 但如果只有 JSON，我們將其清空；如果有其他解釋文字，可能要保留？
-						// 這裡選擇清空，因為我們已經轉成執行動作了
-						aiMsg.Content = ""
-						finalResponse = "" // 清除已累積的 Content，避免被 OnModelMessageComplete 印出
+				// (b) 嘗試 URL query string: tool_name?key=value&key2=value2
+				if !parsed {
+					qsRe := regexp.MustCompile(regexp.QuoteMeta(detectedTool) + `\?([^\s]+)`)
+					if m := qsRe.FindStringSubmatch(content); m != nil {
+						queryStr := m[1]
+						argsMap := make(map[string]interface{})
+						for _, pair := range strings.Split(queryStr, "&") {
+							kv := strings.SplitN(pair, "=", 2)
+							if len(kv) == 2 {
+								argsMap[kv[0]] = kv[1]
+							}
+						}
+						if len(argsMap) > 0 {
+							fmt.Printf("🔍 [Agent] 偵測到 URL query string 工具呼叫: %s?%s\n", detectedTool, queryStr)
+							argsBytes, _ := json.Marshal(argsMap)
+							var finalArgs api.ToolCallFunctionArguments
+							_ = json.Unmarshal(argsBytes, &finalArgs)
+							aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+								Function: api.ToolCallFunction{
+									Name:      detectedTool,
+									Arguments: finalArgs,
+								},
+							})
+							aiMsg.Content = ""
+							finalResponse = ""
+						}
 					}
 				}
 			}
@@ -187,6 +367,52 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		for _, tc := range aiMsg.ToolCalls {
 			argsJSON, _ := json.Marshal(tc.Function.Arguments)
 			argsStr := string(argsJSON)
+
+			// [FIX] knowledge_append 防亂碼：將 LLM 生成的 content 替換為使用者原始輸入
+			// 因為 LLM 的中文 tokenizer 會產生亂碼，但使用者原始輸入一定是正確的
+			if tc.Function.Name == "knowledge_append" {
+				var kaArgs map[string]interface{}
+				if err := json.Unmarshal(argsJSON, &kaArgs); err == nil {
+					// 替換 content 為使用者原始輸入
+					kaArgs["content"] = input
+					fmt.Printf("🔄 [Agent] knowledge_append 防亂碼：使用原始輸入替換 content\n")
+
+					// 修正 category（LLM 可能產生亂碼分類名）
+					if cat, ok := kaArgs["category"].(string); ok {
+						validCategories := []string{"個人資訊", "工作紀錄", "偏好設定", "生活雜記", "技術開發"}
+						// 嘗試匹配最接近的分類
+						matched := false
+						for _, vc := range validCategories {
+							if strings.Contains(cat, vc) || strings.Contains(vc, cat) {
+								kaArgs["category"] = vc
+								matched = true
+								break
+							}
+						}
+						if !matched {
+							// 根據使用者輸入的內容語義自動判斷分類
+							lowerInput := strings.ToLower(input)
+							if strings.Contains(lowerInput, "叫") || strings.Contains(lowerInput, "名") ||
+								strings.Contains(lowerInput, "生日") || strings.Contains(lowerInput, "住") ||
+								strings.Contains(lowerInput, "電話") || strings.Contains(lowerInput, "稱呼") {
+								kaArgs["category"] = "個人資訊"
+							} else if strings.Contains(lowerInput, "工作") || strings.Contains(lowerInput, "專案") ||
+								strings.Contains(lowerInput, "會議") || strings.Contains(lowerInput, "任職") {
+								kaArgs["category"] = "工作紀錄"
+							} else if strings.Contains(lowerInput, "喜歡") || strings.Contains(lowerInput, "偏好") ||
+								strings.Contains(lowerInput, "習慣") {
+								kaArgs["category"] = "偏好設定"
+							} else {
+								kaArgs["category"] = "個人資訊" // 預設分類
+							}
+							fmt.Printf("🔄 [Agent] knowledge_append 分類校正: '%s' → '%s'\n", cat, kaArgs["category"])
+						}
+					}
+
+					fixedArgs, _ := json.Marshal(kaArgs)
+					argsStr = string(fixedArgs)
+				}
+			}
 
 			// [LOG] 記錄工具呼叫
 			if a.Logger != nil {
@@ -220,26 +446,22 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 				toolFeedback = fmt.Sprintf("【執行失敗】：%v", toolErr)
 				// [NEW] 攔截幻覺 (Hallucination) 並記錄
 				if strings.Contains(toolErr.Error(), "找不到工具") {
-					// 為了避免 circular dependency，這裡我們不直接 import tools，
-					// 但因為 ReportMissingTool 在 tools package，而 tools import agent，
-					// 所以 agent 不能 import tools。這是一個架構問題。
-					// 解法：
-					// 1. 將 LogMissingToolEvent 移到 internal/agent 或 internal/core (最乾淨)
-					// 2. 定義一個 Callback 讓 InitRegistry 注入 (最快)
+					toolFeedback = fmt.Sprintf("【系統回饋】：您嘗試呼叫的工具 '%s' 不存在或無權限。\n\n"+
+						"⚠️ **觸發「自我演化協議」(Self-Evolution Protocol)** ⚠️\n"+
+						"系統偵測到您試圖使用尚未實作的能力。請按照以下步驟自主創建此工具：\n"+
+						"1. **分析需求**: 判斷此功能是否可透過 OS 指令 (如 bash, powershell) 或簡單腳本達成。\n"+
+						"2. **測試解決方案**: 使用 `shell_exec` 嘗試執行相關指令，確認輸出符合預期。\n"+
+						"3. **創建技能骨架**: 使用 `skill_scaffold` 建立新技能目錄 (例如: `skill_scaffold(name=\"%s\", ...)` )。\n"+
+						"4. **實作與寫入**: 使用 `fs_write_file` 將測試成功的指令或腳本寫入 `SKILL.md` 或對應檔案。\n"+
+						"5. **註冊技能**: 使用 `reload_skills` 載入新技能。\n"+
+						"6. **最終執行**: 再次呼叫新創建的工具 `%s` 來完成原始任務。\n\n"+
+						"或者，你可以直接呼叫 `generate_skill(goal='...')` 讓我為你自動生成此技能！", tc.Function.Name, tc.Function.Name, tc.Function.Name)
 
-					// 由於時間限制，我們採用 "定義 Callback" 的方式。
-					// 參見 Agent struct 的 OnToolResult 或新增一個 OnHallucination?
-					// 為了簡單，我們直接在 result string 提示使用者系統無此工具。
-					// 並依賴 `ReportMissingTool` 讓 LLM *主動* 回報。
-					// 但使用者說 "不要亂猜"，"若需要的功能系統沒有...記錄至 botmemory/notools.log"。
-
-					// 我們可以將 LogMissingToolEvent 的邏輯複製一份在這裡 (或移至 internal/utils?)
-					// 為了符合 "Clean Architecture"，我們不該讓 agent 依賴 tools。
-					// 讓我們把 LogMissingToolEvent 移到 internal/core/definition.go 或 internal/agent/logger.go?
-					//
-					// 其實 agent 已經有 Logger 了 (*SystemLogger)。我們可以加一個 LogHallucination 方法。
+					// 為了符合 Clean Architecture，這裡只呼叫 Logger 的介面
+					// 若 Logger 有實作 LogHallucination 則會被呼叫
 					if a.Logger != nil {
-						a.Logger.LogHallucination(input, tc.Function.Name) // 需實作
+						// a.Logger.LogHallucination(input, tc.Function.Name) // 暫時註解，等待 Logger 實作
+						a.Logger.LogError(fmt.Sprintf("Hallucination detected: %s", tc.Function.Name), toolErr)
 					}
 				}
 			} else {

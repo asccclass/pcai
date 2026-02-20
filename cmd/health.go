@@ -71,17 +71,25 @@ var healthCmd = &cobra.Command{
 				fmt.Println(successStyle.Render("● " + diskInfo))
 			}
 		*/
-		// 3. 檢查知識庫 (knowledge.md)
+		// 3. 檢查知識庫 (MEMORY.md / knowledge.md)
 		home, _ := os.Getwd()
-		kPath := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+		kPath := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
+		if _, err := os.Stat(kPath); os.IsNotExist(err) {
+			kPath = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+		}
 		fmt.Print(labelStyle.Render("3.長期記憶 (RAG)："))
 		if info, err := os.Stat(kPath); err == nil {
 			sizeKB := float64(info.Size()) / 1024
 			fmt.Printf("%s (大小: %.2f KB)\n", successStyle.Render("● 正常"), sizeKB)
 
-			// --- 新增標籤統計顯示 ---
-			fmt.Print(labelStyle.Render(" └ 標籤統計:"))
-			fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(tools.GetKnowledgeStats()))
+			// --- 索引統計顯示 ---
+			fmt.Print(labelStyle.Render(" └ 索引狀態:"))
+			if tools.GlobalMemoryToolKit != nil {
+				chunks := tools.GlobalMemoryToolKit.ChunkCount()
+				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(fmt.Sprintf("%d 個索引 chunks", chunks)))
+			} else {
+				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render("尚未初始化"))
+			}
 
 			// --- 執行自動備份 ---
 			backupMsg, err := tools.AutoBackupKnowledge()
