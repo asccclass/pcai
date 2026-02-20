@@ -88,6 +88,11 @@ func runChat(cmd *cobra.Command, args []string) {
 	// -------------------------------------------------------------
 	myAgent := agent.NewAgent(modelName, systemPrompt, sess, registry, logger)
 
+	// [MEMORY-FIRST] 設定記憶預搜尋回調
+	if tools.GlobalDB != nil {
+		myAgent.OnMemorySearch = agent.BuildMemorySearchFunc(tools.GlobalDB)
+	}
+
 	// 設定 UI 回調 (Bridging Agent Events -> CLI Glamour UI)
 	myAgent.OnGenerateStart = func() {
 		// 移除 "AI 正在思考中..." 的暫時性提示，改為正式的思考輸出

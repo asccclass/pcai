@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/asccclass/pcai/skills"
+	"github.com/asccclass/pcai/internal/skillloader"
 )
 
 func main() {
@@ -14,7 +14,7 @@ func main() {
 	skillsDir := filepath.Join(home, "skills")
 	fmt.Printf("Loading skills from: %s\n", skillsDir)
 
-	loadedSkills, err := skills.LoadSkills(skillsDir)
+	loadedSkills, err := skillloader.LoadSkills(skillsDir)
 	if err != nil {
 		log.Fatalf("Failed to load skills: %v", err)
 	}

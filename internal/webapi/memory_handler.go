@@ -1,156 +1,151 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/asccclass/pcai/internal/memory"
 )
 
-// MemoryHandler 提供記憶管理 REST API
+// MemoryHandler 記憶管理 HTTP Handler
 type MemoryHandler struct {
-	Manager *memory.Manager
+	toolkit *memory.ToolKit
 }
 
-// NewMemoryHandler 建立新的 Handler
-func NewMemoryHandler(m *memory.Manager) *MemoryHandler {
-	return &MemoryHandler{Manager: m}
+// NewMemoryHandler 建立新的記憶管理 Handler
+func NewMemoryHandler(tk *memory.ToolKit) *MemoryHandler {
+	return &MemoryHandler{toolkit: tk}
 }
 
-// --- 回應輔助 ---
-
-func jsonResponse(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func jsonError(w http.ResponseWriter, status int, msg string) {
-	jsonResponse(w, status, map[string]string{"error": msg})
-}
-
-// --- API 請求結構 ---
-
-type createRequest struct {
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
-}
-
-type updateRequest struct {
-	Content string   `json:"content"`
-	Tags    []string `json:"tags"`
-}
-
-// --- Route 註冊 ---
-
-// AddRoutes 將 API 路由加入 ServeMux
+// AddRoutes 註冊 API 路由
 func (h *MemoryHandler) AddRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/memory", h.handleList)
-	mux.HandleFunc("POST /api/memory", h.handleCreate)
-	mux.HandleFunc("PUT /api/memory/{id}", h.handleUpdate)
-	mux.HandleFunc("DELETE /api/memory/{id}", h.handleDelete)
-}
+	mux.HandleFunc("/api/memory", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.handleList(w, r)
+		case http.MethodPost:
+			h.handleCreate(w, r)
+		case http.MethodDelete:
+			h.handleDelete(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
-// --- Handlers ---
-
-// handleList GET /api/memory
-func (h *MemoryHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	entries := h.Manager.ListAll()
-
-	// 為前端提供精簡版 (去掉 Vector 以減少傳輸量)
-	type entryDTO struct {
-		ID          string   `json:"id"`
-		Content     string   `json:"content"`
-		ContentHash string   `json:"content_hash"`
-		Timestamp   string   `json:"timestamp"`
-		Tags        []string `json:"tags"`
-	}
-
-	dtos := make([]entryDTO, 0, len(entries))
-	for _, e := range entries {
-		dtos = append(dtos, entryDTO{
-			ID:          e.ID,
-			Content:     e.Content,
-			ContentHash: e.ContentHash,
-			Timestamp:   e.Timestamp.Format("2006-01-02 15:04:05"),
-			Tags:        e.Tags,
-		})
-	}
-
-	jsonResponse(w, http.StatusOK, map[string]interface{}{
-		"count":   len(dtos),
-		"entries": dtos,
+	mux.HandleFunc("/api/memory/search", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		h.handleSearch(w, r)
 	})
 }
 
-// handleCreate POST /api/memory
-func (h *MemoryHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	var req createRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, http.StatusBadRequest, "無效的 JSON 格式")
-		return
-	}
-
-	if strings.TrimSpace(req.Content) == "" {
-		jsonError(w, http.StatusBadRequest, "content 不可為空")
-		return
-	}
-
-	if err := h.Manager.Add(req.Content, req.Tags); err != nil {
-		jsonError(w, http.StatusInternalServerError, fmt.Sprintf("新增失敗: %v", err))
-		return
-	}
-
-	jsonResponse(w, http.StatusCreated, map[string]string{"message": "記憶已新增"})
-}
-
-// handleUpdate PUT /api/memory/{id}
-func (h *MemoryHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		jsonError(w, http.StatusBadRequest, "缺少 ID")
-		return
-	}
-
-	var req updateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, http.StatusBadRequest, "無效的 JSON 格式")
-		return
-	}
-
-	if strings.TrimSpace(req.Content) == "" {
-		jsonError(w, http.StatusBadRequest, "content 不可為空")
-		return
-	}
-
-	if err := h.Manager.UpdateByID(id, req.Content, req.Tags); err != nil {
-		jsonError(w, http.StatusNotFound, fmt.Sprintf("更新失敗: %v", err))
-		return
-	}
-
-	jsonResponse(w, http.StatusOK, map[string]string{"message": "記憶已更新"})
-}
-
-// handleDelete DELETE /api/memory/{id}
-func (h *MemoryHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if id == "" {
-		jsonError(w, http.StatusBadRequest, "缺少 ID")
-		return
-	}
-
-	deleted, err := h.Manager.DeleteByID(id)
+// handleList 列出記憶（讀取 MEMORY.md）
+func (h *MemoryHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	content, err := h.toolkit.MemoryGet("MEMORY.md", 0, 0)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, fmt.Sprintf("刪除失敗: %v", err))
+		content = "尚無記憶檔案。"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"content": content,
+		"chunks":  h.toolkit.ChunkCount(),
+	})
+}
+
+// handleSearch 搜尋記憶
+func (h *MemoryHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "missing query parameter 'q'", http.StatusBadRequest)
 		return
 	}
 
-	if !deleted {
-		jsonError(w, http.StatusNotFound, "找不到指定的記憶")
+	ctx := context.Background()
+	resp, err := h.toolkit.MemorySearch(ctx, query)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
 		return
 	}
 
-	jsonResponse(w, http.StatusOK, map[string]string{"message": "記憶已刪除"})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"results":  resp.Results,
+		"backend":  resp.Backend,
+		"provider": resp.Provider,
+	})
+}
+
+// handleCreate 建立新記憶
+func (h *MemoryHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Content  string `json:"content"`
+		Category string `json:"category"`
+		Mode     string `json:"mode"` // "daily" | "long_term"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Content == "" {
+		http.Error(w, "content is required", http.StatusBadRequest)
+		return
+	}
+
+	var err error
+	mode := req.Mode
+	if mode == "" {
+		mode = "long_term"
+	}
+
+	switch mode {
+	case "daily":
+		err = h.toolkit.WriteToday(req.Content)
+	case "long_term":
+		cat := req.Category
+		if cat == "" {
+			cat = "general"
+		}
+		err = h.toolkit.WriteLongTerm(cat, req.Content)
+	default:
+		http.Error(w, fmt.Sprintf("unsupported mode: %s", mode), http.StatusBadRequest)
+		return
+	}
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("記憶已寫入 (%s)", mode),
+	})
+}
+
+// handleDelete 刪除記憶（尚未完全實作）
+func (h *MemoryHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"message": "刪除功能目前僅支援透過 memory_forget 工具操作",
+	})
 }

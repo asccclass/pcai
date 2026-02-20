@@ -34,10 +34,25 @@ var toolHintRules = []toolHintRule{
 		},
 	},
 	{
-		Keywords: []string{"天氣", "氣象", "weather", "預報"},
+		Keywords: []string{"天氣", "氣象", "weather", "預報", "會冷", "會熱", "下雨", "溫度", "氣溫"},
 		ToolName: "get_taiwan_weather",
 		HintFunc: func(input string) string {
-			return "[SYSTEM INSTRUCTION] 使用者詢問天氣。若地點在台灣 (例如台北、高雄、台中...)，**必須**優先呼叫 `get_taiwan_weather` 技能，而非 `web_search` 或 `google_search`。"
+			today := time.Now().Format("2006-01-02")
+			return fmt.Sprintf(
+				`[SYSTEM INSTRUCTION] 使用者詢問天氣。今天的日期是 %s。
+
+判斷邏輯：
+1. 若本訊息包含 [MEMORY CONTEXT] 且記憶中已有「溫度」、「降雨機率」等實際天氣預報數據，請直接引用該資料回答，不需呼叫工具。
+2. 若記憶中沒有天氣預報數據，你必須呼叫 get_taiwan_weather 工具。
+
+呼叫工具的嚴格格式要求：
+- 你必須使用標準 JSON 格式呼叫，範例：{"name": "get_taiwan_weather", "parameters": {"location": "苗栗縣"}}
+- 工具只接受一個參數 location，絕對不要傳 date 或其他參數（API 自動回傳未來預報）。
+- location 的值必須從以下列表中精確複製一個：基隆市、臺北市、新北市、桃園市、新竹市、新竹縣、苗栗縣、臺中市、彰化縣、南投縣、雲林縣、嘉義市、嘉義縣、臺南市、高雄市、屏東縣、宜蘭縣、花蓮縣、臺東縣、澎湖縣、金門縣、連江縣。
+- 嚴禁使用 [tool_name param=value] 或其他非 JSON 格式。
+- 嚴禁使用 web_search、google_search。`,
+				today,
+			)
 		},
 	},
 	{
