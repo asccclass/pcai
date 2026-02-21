@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/asccclass/pcai/internal/database"
+	"github.com/asccclass/pcai/internal/memory"
 )
 
 // memorySourceMap 定義使用者輸入關鍵字 → 短期記憶來源的映射
@@ -29,54 +30,91 @@ var memorySourceMap = []struct {
 	},
 }
 
-// BuildMemorySearchFunc 建立短期記憶預搜尋函式
-// 傳入 SQLite DB，回傳可設定給 Agent.OnMemorySearch 的回調函式
-func BuildMemorySearchFunc(db *database.DB) func(query string) string {
-	if db == nil {
+// BuildMemorySearchFunc 建立短期與長期記憶預搜尋函式
+// 傳入 SQLite DB 與 ToolKit，回傳可設定給 Agent.OnMemorySearch 的回調函式
+func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query string) string {
+	if db == nil && tk == nil {
 		return nil
 	}
 
 	return func(query string) string {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		lower := strings.ToLower(query)
+		var sb strings.Builder
+		foundAny := false
 
-		// 根據輸入關鍵字找到對應的記憶來源 (source)
-		source := ""
-		for _, mapping := range memorySourceMap {
-			for _, kw := range mapping.InputKeywords {
-				if strings.Contains(lower, strings.ToLower(kw)) {
-					source = mapping.Source
+		// 1. 短期記憶搜尋 (SQLite)
+		if db != nil {
+			source := ""
+			for _, mapping := range memorySourceMap {
+				for _, kw := range mapping.InputKeywords {
+					if strings.Contains(lower, strings.ToLower(kw)) {
+						source = mapping.Source
+						break
+					}
+				}
+				if source != "" {
 					break
 				}
 			}
+
 			if source != "" {
-				break
+				entries, err := db.GetShortTermMemoryBySource(ctx, source, 3)
+				if err == nil && len(entries) > 0 {
+					foundAny = true
+					sb.WriteString("[MEMORY CONTEXT] 以下是系統短期記憶中的相關資訊：\n")
+					for i, e := range entries {
+						content := strings.TrimSpace(e.Content)
+						if len(content) > 1000 {
+							content = content[:1000] + "...«已截斷»"
+						}
+						sb.WriteString(fmt.Sprintf("\n--- 近期紀錄 %d [%s] ---\n%s\n", i+1, e.CreatedAt, content))
+					}
+					sb.WriteString("\n")
+				}
 			}
 		}
 
-		if source == "" {
-			// 沒有匹配任何已知分類，不搜尋記憶
-			return ""
-		}
+		// 2. 長期記憶混合搜尋 (BM25 + Vector Semantic Search)
+		if tk != nil && len(strings.TrimSpace(query)) > 0 {
+			resp, err := tk.MemorySearch(ctx, query)
+			if err == nil && len(resp.Results) > 0 {
+				if !foundAny {
+					sb.WriteString("[MEMORY CONTEXT] 以下是長期記憶庫中的高度相關背景知識。\n⚠️【最高優先級警告】：這份背景知識代表使用者實際的生活或專案背景，你必須「絕對無條件信任」並「優先使用」這裡提供的所有名詞、日期與事實來回答問題，嚴禁擅自使用目前的系統時間或其他外部知識進行覆寫：\n")
+				} else {
+					sb.WriteString("【長期深度記憶】\n")
+				}
+				foundAny = true
 
-		// 按來源搜尋短期記憶（精確比對 source 欄位）
-		entries, err := db.GetShortTermMemoryBySource(ctx, source, 3)
-		if err != nil || len(entries) == 0 {
-			return ""
-		}
+				for i, res := range resp.Results {
+					if i >= 3 { // 最多取前 3 筆避免塞爆 prompt
+						break
+					}
+					content := strings.TrimSpace(res.Chunk.Content)
+					if len(content) > 1500 {
+						content = content[:1500] + "...«已截斷»"
+					}
+					// 輸出 debug 以了解為何常常被略過
+					fmt.Printf("[Memory Debug] Match %d: FinalScore=%.3f, VectorScore=%.3f, TextScore=%.3f\n", i, res.FinalScore, res.VectorScore, res.TextScore)
 
-		// 格式化記憶上下文
-		var sb strings.Builder
-		sb.WriteString("[MEMORY CONTEXT] 以下是系統短期記憶中的相關資訊。若內容足以回答問題，請直接引用此資訊回答，不需要再呼叫工具：\n")
-		for i, e := range entries {
-			content := strings.TrimSpace(e.Content)
-			if len(content) > 1500 {
-				content = content[:1500] + "...«已截斷»"
+					// 稍微調降閾值，以適應短句搜查
+					if res.FinalScore > 0.05 || res.TextScore > 0.05 {
+						sb.WriteString(fmt.Sprintf("\n--- 背景知識 %d ---\n%s\n", i+1, content))
+					} else {
+						fmt.Printf("[Memory Debug] Match %d dropped due to low score.\n", i)
+					}
+				}
 			}
-			sb.WriteString(fmt.Sprintf("\n--- 記憶 %d [%s] ---\n%s\n", i+1, e.CreatedAt, content))
 		}
+
+		if !foundAny {
+			return ""
+		}
+
+		// 加入收尾提示
+		sb.WriteString("\n若上述內容包含能回答使用者問題的證據（特別是日期、姓名等具體資訊），請「直接引用」並以肯定句作答，不需要再呼叫搜尋工具。\n")
 
 		return sb.String()
 	}

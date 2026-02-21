@@ -12,10 +12,11 @@ import (
 
 type MemorySaveTool struct {
 	toolkit *memory.ToolKit
+	pending *memory.PendingStore
 }
 
-func NewMemorySaveTool(tk *memory.ToolKit) *MemorySaveTool {
-	return &MemorySaveTool{toolkit: tk}
+func NewMemorySaveTool(tk *memory.ToolKit, ps *memory.PendingStore) *MemorySaveTool {
+	return &MemorySaveTool{toolkit: tk, pending: ps}
 }
 
 func (t *MemorySaveTool) Name() string {
@@ -75,26 +76,11 @@ func (t *MemorySaveTool) Run(argsJSON string) (string, error) {
 		args.Mode = "long_term"
 	}
 
-	switch args.Mode {
-	case "daily":
-		if err := t.toolkit.WriteToday(args.Content); err != nil {
-			return "", fmt.Errorf("寫入今日日誌失敗: %w", err)
-		}
-		return fmt.Sprintf("📝 已寫入今日日誌: \"%s\"", truncate(args.Content, 80)), nil
+	// 寫入 PendingStore
+	pendingID := t.pending.Add(args.Content, args.Category, args.Mode)
 
-	case "long_term":
-		cat := args.Category
-		if cat == "" {
-			cat = "general"
-		}
-		if err := t.toolkit.WriteLongTerm(cat, args.Content); err != nil {
-			return "", fmt.Errorf("寫入長期記憶失敗: %w", err)
-		}
-		return fmt.Sprintf("🧠 已寫入長期記憶 [%s]: \"%s\"", cat, truncate(args.Content, 80)), nil
-
-	default:
-		return fmt.Sprintf("不支援的模式: %s (支援: daily, long_term)", args.Mode), nil
-	}
+	// 回傳對話提示告訴 AI
+	return fmt.Sprintf("記憶已暫存。請務必詢問使用者：「我準備記住這筆資訊，要確認存入嗎？」\n內部暫存 ID：%s", pendingID), nil
 }
 
 func truncate(s string, maxLen int) string {

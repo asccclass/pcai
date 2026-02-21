@@ -769,15 +769,15 @@
                 const endpoint = currentTab === 'short_term' ? API_SHORT : API_LONG;
                 const res = await fetch(endpoint);
                 const data = await res.json();
-                
+
                 if (currentTab === 'short_term') {
                     allEntries = data.entries || [];
                     document.getElementById('totalCount').textContent = `共 ${data.count || allEntries.length} 筆短期記憶`;
                 } else {
-                    allEntries = data.entries || [];
-                    document.getElementById('totalCount').textContent = `共 ${data.count || '多'} 筆長期記憶`;
+                    allEntries = data.content || data.entries || "尚無記憶資料";
+                    document.getElementById('totalCount').textContent = data.chunks !== undefined ? `共 ${data.chunks} 區塊` : `長期記憶 (最新)`;
                 }
-                
+
                 renderEntries(allEntries);
             } catch (e) {
                 showToast('載入失敗: ' + e.message, 'error');
@@ -787,7 +787,7 @@
         async function createEntry() {
             const content = document.getElementById('createContent').value.trim();
             const mode = document.getElementById('createMode').value;
-            
+
             if (!content) { showToast('請輸入內容', 'error'); return; }
 
             const btn = document.getElementById('createBtn');
@@ -821,7 +821,7 @@
 
                 document.getElementById('createContent').value = '';
                 showToast('✅ 記憶已新增', 'success');
-                
+
                 // 如果新增的模式與當前 Tab 一致，則重刷列表
                 if (mode === currentTab) {
                     fetchEntries();
@@ -870,7 +870,7 @@
         async function confirmDelete() {
             const id = document.getElementById('deleteId').value;
             try {
-                const endpoint = currentTab === 'short_term' ? `${API_SHORT}/delete?id=${id}` : `${API_LONG}/${id}`; 
+                const endpoint = currentTab === 'short_term' ? `${API_SHORT}/delete?id=${id}` : `${API_LONG}/${id}`;
                 const res = await fetch(endpoint, { method: 'DELETE' });
                 if (!res.ok) {
                     const err = await res.json();
@@ -918,7 +918,7 @@
                 if (currentTab === 'short_term') {
                     const sourceHtml = `<span class="tag" style="background: rgba(16, 185, 129, 0.1); color: var(--success); border-color: rgba(16, 185, 129, 0.2);"><i style="margin-right:4px;">📥</i>${escapeHtml(e.source)}</span>`;
                     const expireHtml = `<span class="tag" style="background: rgba(245, 158, 11, 0.1); color: var(--warning); border-color: rgba(245, 158, 11, 0.2);">⏳ 倒數至 ${escapeHtml(e.expires_at)}</span>`;
-                    
+
                     return `
                     <div class="entry-card">
                         <div class="entry-top">
@@ -1009,7 +1009,7 @@
             const filtered = allEntries.filter(e =>
                 (e.content && e.content.toLowerCase().includes(q)) ||
                 (e.tags && e.tags.some(t => t.toLowerCase().includes(q))) ||
-                (e.source && e.source.toLowerCase().includes(q)) || 
+                (e.source && e.source.toLowerCase().includes(q)) ||
                 (e.id && String(e.id).toLowerCase().includes(q))
             );
             renderEntries(filtered);

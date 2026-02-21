@@ -227,10 +227,6 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 
 	// 基礎工具
 	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
-	if memToolKit != nil {
-		registry.Register(NewKnowledgeSearchTool(memToolKit))
-		registry.Register(NewKnowledgeAppendTool(memToolKit))
-	}
 	registry.Register(&WebFetchTool{})
 	registry.Register(&WebSearchTool{})
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
@@ -257,10 +253,13 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 
 	// 記憶相關工具（使用新 ToolKit API）
 	if memToolKit != nil {
-		registry.Register(NewMemoryTool(memToolKit))       // 搜尋工具
-		registry.Register(NewMemorySaveTool(memToolKit))   // 儲存工具
-		registry.Register(NewMemoryGetTool(memToolKit))    // 讀取工具
-		registry.Register(NewMemoryForgetTool(memToolKit)) // 遺忘工具
+		pendingStore := memory.NewPendingStore(30 * time.Minute)
+
+		registry.Register(NewMemoryTool(memToolKit))                      // 搜尋工具
+		registry.Register(NewMemorySaveTool(memToolKit, pendingStore))    // 儲存工具 (暫存)
+		registry.Register(NewMemoryConfirmTool(memToolKit, pendingStore)) // 確認工具
+		registry.Register(NewMemoryGetTool(memToolKit))                   // 讀取工具
+		registry.Register(NewMemoryForgetTool(memToolKit))                // 遺忘工具
 	}
 
 	// 排程工具 (讓 LLM 可以設定 Cron)
@@ -528,8 +527,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		})
 
 		// [MEMORY-FIRST] 設定記憶預搜尋回調
-		if sqliteDB != nil {
-			adapter.SetMemorySearchCallback(agent.BuildMemorySearchFunc(sqliteDB))
+		if sqliteDB != nil || GlobalMemoryToolKit != nil {
+			adapter.SetMemorySearchCallback(agent.BuildMemorySearchFunc(sqliteDB, GlobalMemoryToolKit))
 		}
 
 		// 2. 建立 Dispatcher

@@ -89,19 +89,19 @@ func runChat(cmd *cobra.Command, args []string) {
 	myAgent := agent.NewAgent(modelName, systemPrompt, sess, registry, logger)
 
 	// [MEMORY-FIRST] 設定記憶預搜尋回調
-	if tools.GlobalDB != nil {
-		myAgent.OnMemorySearch = agent.BuildMemorySearchFunc(tools.GlobalDB)
+	if tools.GlobalDB != nil || tools.GlobalMemoryToolKit != nil {
+		myAgent.OnMemorySearch = agent.BuildMemorySearchFunc(tools.GlobalDB, tools.GlobalMemoryToolKit)
 	}
 
 	// 設定 UI 回調 (Bridging Agent Events -> CLI Glamour UI)
 	myAgent.OnGenerateStart = func() {
-		// 移除 "AI 正在思考中..." 的暫時性提示，改為正式的思考輸出
-		// fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("AI 正在思考中..."))
+		// 恢復 "AI 正在思考中..." 的暫時性提示
+		fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("AI 正在思考中..."))
 	}
 
 	myAgent.OnModelMessageComplete = func(content string) {
 		// 清除行 (如果是思考中...)
-		// fmt.Print("\r\033[K")
+		fmt.Print("\r\033[K")
 
 		if content != "" {
 			// 檢查內容是否包含 <thought> 標籤或是純文字
