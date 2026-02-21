@@ -240,6 +240,12 @@ func (db *DB) CleanExpiredMemory(ctx context.Context) (int64, error) {
 	return result.RowsAffected()
 }
 
+// DeleteShortTermMemory 依據 ID 刪除特定短期記憶
+func (db *DB) DeleteShortTermMemory(ctx context.Context, id int) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM short_term_memory WHERE id = ?", id)
+	return err
+}
+
 // SearchShortTermMemory 關鍵字搜尋短期記憶
 func (db *DB) SearchShortTermMemory(ctx context.Context, keyword string, limit int) ([]ShortTermMemoryEntry, error) {
 	query := `SELECT id, source, content, expires_at, created_at 
