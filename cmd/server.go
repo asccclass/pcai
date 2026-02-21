@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/asccclass/pcai/internal/database"
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/webapi"
 	SherryServer "github.com/asccclass/sherryserver"
@@ -83,6 +84,16 @@ func runServe(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("✅ [Memory] ToolKit 初始化完成 (索引 %d 個 chunks)\n", memToolKit.ChunkCount())
 
+	// 3.5 初始化資料庫 (讓 WebAPI 能存取 Short-term Memory)
+	dbPath := filepath.Join(home, "botmemory", "pcai.db")
+	sqliteDB, err := database.NewSQLite(dbPath)
+	if err != nil {
+		fmt.Printf("⚠️ 無法連線資料庫 (短期記憶功能可能無法使用): %v\n", err)
+	} else {
+		// defer sqliteDB.Close() // 持續開啟給整個 server 生命週期使用
+		fmt.Println("✅ [Database] SQLite 初始化完成")
+	}
+
 	// 4. 建立 SherryServer
 	server, err := SherryServer.NewServer(":"+port, documentRoot, templateRoot)
 	if err != nil {
@@ -94,7 +105,7 @@ func runServe(cmd *cobra.Command, args []string) {
 	router := http.NewServeMux()
 
 	// 5a. API 路由
-	memHandler := webapi.NewMemoryHandler(memToolKit)
+	memHandler := webapi.NewMemoryHandler(memToolKit, sqliteDB)
 	memHandler.AddRoutes(router)
 
 	// 5b. 靜態檔案服務
