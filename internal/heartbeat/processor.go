@@ -10,8 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asccclass/pcai/internal/agent"
+	"github.com/asccclass/pcai/internal/core"
 	"github.com/asccclass/pcai/internal/database"
+	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/internal/notify"
+	"github.com/asccclass/pcai/llms/ollama"
 	"github.com/asccclass/pcai/skills"
 	"github.com/go-resty/resty/v2"
 	"github.com/ollama/ollama/api"
@@ -607,4 +611,52 @@ func (b *PCAIBrain) RunSelfTest(ctx context.Context) error {
 	// 寫入 Heartbeat Log (重置計時器)
 	err = b.DB.CreateHeartbeatLog(ctx, "SYSTEM: AUTO_TEST", "ACTION: SELF_TEST", "Daily Check Completed", 100, summary)
 	return err
+}
+
+// RunPatrol 執行閒置時的背景巡邏，讀取 HEARTBEAT.md 的指令並啟動一個 Agent 流程來執行 Tool Calls
+func (b *PCAIBrain) RunPatrol(ctx context.Context) error {
+	home, _ := os.Getwd()
+	data, err := os.ReadFile(filepath.Join(home, "botcharacter", "HEARTBEAT.md"))
+	if err != nil {
+		fmt.Printf("⚠️ [Heartbeat] 找不到 HEARTBEAT.md，略過背景巡邏 (%v)\n", err)
+		return nil
+	}
+
+	systemPrompt := string(data)
+
+	// 確保能轉為核心工具註冊表
+	registry, ok := b.tools.(*core.Registry)
+	if !ok {
+		return fmt.Errorf("無法取得工具註冊表")
+	}
+
+	// 建立專用的暫時 Session 供背景 Agent 使用，不與主要輸入混淆
+	sess := history.NewSession()
+	sess.ID = "session_patrol_" + fmt.Sprint(time.Now().Unix()) // 特殊 ID，避免被一般讀取覆蓋
+	sess.Messages = append(sess.Messages, ollama.Message{Role: "system", Content: systemPrompt})
+
+	// 建立背景 Agent (不需 Logger 避免洗版)
+	myAgent := agent.NewAgent(b.modelName, systemPrompt, sess, registry, nil)
+
+	fmt.Println("🕵️ [Heartbeat] 啟動背景巡邏 (Patrol)...")
+
+	// 我們加上 "SILENT" 短語的預防針在輸入中，這樣如果 AI 決定不要回報任何事情，它就只會輸出 SILENT
+	input := fmt.Sprintf("開始執行 Heartbeat 巡邏指令。現在時間是: %s。\n請嚴格遵守執行原則。如果你判斷不需要主動通知我任何事（例如現在是深夜勿擾時間，或者無任何異常），請只回答 'SILENT'。", time.Now().Format("2006-01-02 15:04:05"))
+
+	response, err := myAgent.Chat(input, nil)
+	if err != nil {
+		return fmt.Errorf("巡邏執行錯誤: %w", err)
+	}
+
+	response = strings.TrimSpace(response)
+
+	// 若內容並非宣告安靜，就發送通知給使用者
+	if response != "" && !strings.Contains(response, "SILENT") && !strings.Contains(response, "無異常") && !strings.Contains(response, "綠燈") {
+		fmt.Printf("🕵️ [Heartbeat] 巡邏回報: 發送通知...\n")
+		b.dispatcher.Dispatch(ctx, "NORMAL", response)
+	} else {
+		fmt.Printf("🕵️ [Heartbeat] 巡邏完畢: 狀態靜默。\n")
+	}
+
+	return nil
 }

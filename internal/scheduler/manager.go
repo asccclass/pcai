@@ -21,8 +21,10 @@ type HeartbeatBrain interface {
 	Think(ctx context.Context, snapshot string) (string, error)
 	// ExecuteDecision 執行 Think 產生的結果
 	ExecuteDecision(ctx context.Context, decision string) error
-	// 讓 Scheduler 知道大腦具備產生簡報的能力
+	// GenerateMorningBriefing 讓 Scheduler 知道大腦具備產生簡報的能力
 	GenerateMorningBriefing(ctx context.Context) error
+	// RunPatrol 執行閒置時的背景巡邏
+	RunPatrol(ctx context.Context) error
 }
 
 type ScheduledJob struct {
@@ -101,7 +103,10 @@ func (m *Manager) runHeartbeat() {
 
 	// 4. 執行 (Execution)
 	if decision == "STATUS: IDLE" {
-		fmt.Println("[Scheduler] Heartbeat: AI decided to stay quiet.")
+		fmt.Println("[Scheduler] Heartbeat: AI decided to stay quiet. Starting background patrol...")
+		if err := m.brain.RunPatrol(ctx); err != nil {
+			fmt.Printf("[Scheduler] Patrol Error: %v\n", err)
+		}
 		return
 	}
 
