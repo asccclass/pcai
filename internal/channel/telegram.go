@@ -50,6 +50,13 @@ func (l *customLogger) Errorf(format string, args ...interface{}) {
 		fmt.Println("👉 請檢查是否開啟了多個終端機視窗，或有背景程序未關閉。")
 		os.Exit(0)
 	}
+
+	// 忽略常見的無害網路連線或逾時錯誤（Telego 會自動重試，避免洗頻）
+	if strings.Contains(msg, "A connection attempt failed because the connected party did not properly respond") ||
+		strings.Contains(msg, "server closed connection before returning the first response byte") {
+		return
+	}
+
 	log.Printf("⚠️ [Telego Error] %s", msg)
 }
 
@@ -63,9 +70,9 @@ func NewTelegramChannel(token string, debug bool) (*TelegramChannel, error) {
 	// [FIX] 使用自定義的 fasthttp client，避免 "connection closed before returning first response byte" 錯誤
 	// 這是因為預設 client 的 ReadTimeout 可能比 Long Polling Timeout 短
 	fastHttpClient := &fasthttp.Client{
-		ReadTimeout:                   90 * time.Second, // 比 Long Polling Timeout (60s) 長
-		WriteTimeout:                  90 * time.Second,
-		MaxIdleConnDuration:           90 * time.Second,
+		ReadTimeout:                   60 * time.Second, // 比 Long Polling Timeout (30s) 長
+		WriteTimeout:                  60 * time.Second,
+		MaxIdleConnDuration:           60 * time.Second,
 		NoDefaultUserAgentHeader:      true,
 		DisableHeaderNamesNormalizing: true,
 		Dial: (&fasthttp.TCPDialer{
@@ -91,7 +98,7 @@ func (t *TelegramChannel) Listen(handler func(Envelope)) {
 
 	// 設定長輪詢參數
 	updates, err := t.bot.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
-		Timeout: 60,
+		Timeout: 30,
 	})
 	if err != nil {
 		log.Fatalf("⚠️ [Telegram] 無法啟動長輪詢: %v", err)
