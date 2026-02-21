@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -60,9 +61,33 @@ func copyFile(src, dst string) error {
 
 // 輔助函式：清理舊備份
 func cleanOldBackups(dir string, keep int) {
-	files, _ := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) <= keep {
+		return
+	}
+
+	var files []os.FileInfo
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			if info, err := entry.Info(); err == nil {
+				files = append(files, info)
+			}
+		}
+	}
+
 	if len(files) <= keep {
 		return
 	}
-	// 這裡可以加入排序邏輯刪除最舊的，簡單起見先實作基本功能
+
+	// 根據修改時間排序（舊 -> 新）
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].ModTime().Before(files[j].ModTime())
+	})
+
+	// 刪除最舊的檔案
+	deleteCount := len(files) - keep
+	for i := 0; i < deleteCount; i++ {
+		filePath := filepath.Join(dir, files[i].Name())
+		_ = os.Remove(filePath)
+	}
 }
