@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -48,47 +49,54 @@ func (o *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 		return nil, nil
 	}
 
-	results := make([][]float32, len(texts))
+	results := make([][]float32, 0, len(texts))
+	const batchSize = 50
 
-	// Ollama embed API 支援批次（/api/embed）
-	reqBody := map[string]interface{}{
-		"model": o.model,
-		"input": texts,
-	}
-	bodyJSON, _ := json.Marshal(reqBody)
-
-	req, err := http.NewRequestWithContext(ctx, "POST", o.baseURL+"/api/embed", strings.NewReader(string(bodyJSON)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("ollama embed request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama embed returned status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Embeddings [][]float32 `json:"embeddings"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	for i, emb := range result.Embeddings {
-		if i < len(results) {
-			results[i] = emb
+	for i := 0; i < len(texts); i += batchSize {
+		end := i + batchSize
+		if end > len(texts) {
+			end = len(texts)
 		}
-	}
+		batch := texts[i:end]
 
-	// 更新 dimensions 如果回傳了資料
-	if len(result.Embeddings) > 0 && len(result.Embeddings[0]) > 0 {
-		o.dimensions = len(result.Embeddings[0])
+		reqBody := map[string]interface{}{
+			"model": o.model,
+			"input": batch,
+		}
+		bodyJSON, _ := json.Marshal(reqBody)
+
+		req, err := http.NewRequestWithContext(ctx, "POST", o.baseURL+"/api/embed", strings.NewReader(string(bodyJSON)))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := o.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("ollama embed request failed: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("ollama embed returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var result struct {
+			Embeddings [][]float32 `json:"embeddings"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+		resp.Body.Close()
+
+		results = append(results, result.Embeddings...)
+
+		// 更新 dimensions 如果回傳了資料
+		if len(result.Embeddings) > 0 && len(result.Embeddings[0]) > 0 {
+			o.dimensions = len(result.Embeddings[0])
+		}
 	}
 
 	return results, nil

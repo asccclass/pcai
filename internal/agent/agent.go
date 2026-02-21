@@ -68,14 +68,30 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 
 	// [TOOL HINT] 根據關鍵字注入工具提示，引導 LLM 選擇正確工具
 	userContent := input
-	if hint := getToolHint(input); hint != "" {
+	var lastPendingID string
+	if a.Session != nil {
+		for i := len(a.Session.Messages) - 1; i >= 0; i-- {
+			msg := a.Session.Messages[i]
+			if strings.Contains(msg.Content, "pending_") {
+				re := regexp.MustCompile(`pending_\d+`)
+				matches := re.FindStringSubmatch(msg.Content)
+				if len(matches) > 0 {
+					lastPendingID = matches[0]
+					break
+				}
+			}
+		}
+	}
+
+	if hint := getToolHint(input, lastPendingID); hint != "" {
 		userContent = input + "\n\n" + hint
 	}
 
 	// [MEMORY-FIRST] 搜尋記憶，注入相關上下文
 	if a.OnMemorySearch != nil {
 		if memCtx := a.OnMemorySearch(input); memCtx != "" {
-			userContent += "\n\n" + memCtx
+			// 把記憶放在問題之前，讓 LLM 的注意力聚焦在最後的問題上
+			userContent = memCtx + "\n\n【使用者問題】\n" + userContent
 			fmt.Println("💾 [Memory] 記憶命中，已注入上下文")
 		}
 	}
@@ -122,49 +138,84 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		}
 
 		// [FIX] 補救措施：如果 ToolCalls 為空，但 Content 看起來像是 JSON 工具呼叫
+		// 有些情況下，LLM 甚至會一次輸出多個獨立的 JSON block
 		if len(aiMsg.ToolCalls) == 0 {
 			content := strings.TrimSpace(aiMsg.Content)
-			// 嘗試抓取 JSON 區塊 (以防前後有文字)
-			start := strings.Index(content, "{")
-			end := strings.LastIndex(content, "}")
 
-			if start != -1 && end != -1 && end > start {
-				jsonStr := content[start : end+1]
+			// 尋找所有的 JSON blocks
+			jsonRe := regexp.MustCompile(`(?s)\{[\s\S]*?\}`)
+			matches := jsonRe.FindAllString(content, -1)
 
+			parsedCount := 0
+			for _, jsonStr := range matches {
 				// 嘗試解析這種非標準的 JSON 輸出
 				// 例如: {"type": "function", "name": "fs_append_to_file", "parameters": {...}}
 				var rawCall struct {
 					Name       string                         `json:"name"`
+					Action     string                         `json:"action"`     // Support "action" instead of "name"
 					Parameters *api.ToolCallFunctionArguments `json:"parameters"` // 改變為指標以允許 nil 檢查
 					Arguments  *api.ToolCallFunctionArguments `json:"arguments"`
 				}
 
-				if err := json.Unmarshal([]byte(jsonStr), &rawCall); err == nil && rawCall.Name != "" {
-					fmt.Printf("🔍 [Agent] 偵測到原始 JSON 工具呼叫: %s\n", rawCall.Name)
-
-					// 參數相容性處理: 有些模型會用 parameters 代替 arguments
-					var finalArgs api.ToolCallFunctionArguments
-
-					if rawCall.Arguments != nil {
-						finalArgs = *rawCall.Arguments
-					} else if rawCall.Parameters != nil {
-						finalArgs = *rawCall.Parameters
-					} else {
-						// 若皆無，保持 zero value
-						finalArgs = api.ToolCallFunctionArguments{}
+				if err := json.Unmarshal([]byte(jsonStr), &rawCall); err == nil {
+					funcName := rawCall.Name
+					if funcName == "" {
+						funcName = rawCall.Action
 					}
 
-					// 建構標準 ToolCall
-					aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
-						Function: api.ToolCallFunction{
-							Name:      rawCall.Name,
-							Arguments: finalArgs,
-						},
-					})
+					// [FIX] 嘗試從參數特徵推斷 (如果 AI 漏寫 action/name)
+					if funcName == "" {
+						var inferMap map[string]interface{}
+						if json.Unmarshal([]byte(jsonStr), &inferMap) == nil {
+							// 若包含 content 和 category，高機率是 memory_save 的參數體
+							if _, hasContent := inferMap["content"]; hasContent {
+								if _, hasCategory := inferMap["category"]; hasCategory {
+									funcName = "memory_save"
+								}
+							}
+						}
+					}
 
-					aiMsg.Content = ""
-					finalResponse = ""
+					if funcName != "" {
+						fmt.Printf("🔍 [Agent] 偵測到原始 JSON 工具呼叫: %s\n", funcName)
+
+						// 參數相容性處理: 有些模型會用 parameters 代替 arguments
+						var finalArgs api.ToolCallFunctionArguments
+
+						if rawCall.Arguments != nil {
+							finalArgs = *rawCall.Arguments
+						} else if rawCall.Parameters != nil {
+							finalArgs = *rawCall.Parameters
+						} else {
+							// 嘗試將整個 JSON 視為 Arguments
+							var fullArgs map[string]interface{}
+							if err := json.Unmarshal([]byte(jsonStr), &fullArgs); err == nil {
+								delete(fullArgs, "name")
+								delete(fullArgs, "action")
+
+								// Convert map to api.ToolCallFunctionArguments
+								argsBytes, _ := json.Marshal(fullArgs)
+								var convertedArgs api.ToolCallFunctionArguments
+								_ = json.Unmarshal(argsBytes, &convertedArgs)
+								finalArgs = convertedArgs
+							}
+						}
+
+						// 建構標準 ToolCall
+						aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+							Function: api.ToolCallFunction{
+								Name:      funcName,
+								Arguments: finalArgs,
+							},
+						})
+						parsedCount++
+					}
 				}
+			}
+
+			if parsedCount > 0 {
+				aiMsg.Content = ""
+				finalResponse = ""
 			}
 		}
 
@@ -364,18 +415,21 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		}
 
 		// 執行工具
+		forceBreakState := false
+		var forcedAssistReply string
+
 		for _, tc := range aiMsg.ToolCalls {
 			argsJSON, _ := json.Marshal(tc.Function.Arguments)
 			argsStr := string(argsJSON)
 
-			// [FIX] knowledge_append 防亂碼：將 LLM 生成的 content 替換為使用者原始輸入
+			// [FIX] memory_save 防亂碼：將 LLM 生成的 content 替換為使用者原始輸入
 			// 因為 LLM 的中文 tokenizer 會產生亂碼，但使用者原始輸入一定是正確的
-			if tc.Function.Name == "knowledge_append" {
+			if tc.Function.Name == "memory_save" {
 				var kaArgs map[string]interface{}
 				if err := json.Unmarshal(argsJSON, &kaArgs); err == nil {
 					// 替換 content 為使用者原始輸入
 					kaArgs["content"] = input
-					fmt.Printf("🔄 [Agent] knowledge_append 防亂碼：使用原始輸入替換 content\n")
+					fmt.Printf("🔄 [Agent] memory_save 防亂碼：使用原始輸入替換 content\n")
 
 					// 修正 category（LLM 可能產生亂碼分類名）
 					if cat, ok := kaArgs["category"].(string); ok {
@@ -405,7 +459,7 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 							} else {
 								kaArgs["category"] = "個人資訊" // 預設分類
 							}
-							fmt.Printf("🔄 [Agent] knowledge_append 分類校正: '%s' → '%s'\n", cat, kaArgs["category"])
+							fmt.Printf("🔄 [Agent] memory_save 分類校正: '%s' → '%s'\n", cat, kaArgs["category"])
 						}
 					}
 
@@ -465,9 +519,19 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 					}
 				}
 			} else {
-				// 如果結果包含 "背景啟動"，則給予強大的確認標記
-				if strings.Contains(result, "背景啟動") {
-					aiMsg.ToolCalls = nil // 💡 強制清除，防止 AI 腦袋卡住
+				// 如果結果包含 "背景啟動" 或需要詢問使用者確認，則給予強大的確認標記並中斷連續呼叫
+				if strings.Contains(result, "背景啟動") || strings.Contains(result, "請務必詢問使用者") {
+					toolFeedback = fmt.Sprintf("【SYSTEM】: %s", result)
+					forceBreakState = true
+
+					if strings.Contains(result, "請務必詢問使用者") {
+						// 手動生成助理回覆，確保使用者看到確認訊息
+						pid := ""
+						if idx := strings.Index(result, "內部暫存 ID："); idx != -1 {
+							pid = strings.TrimSpace(result[idx+len("內部暫存 ID："):])
+						}
+						forcedAssistReply = fmt.Sprintf("📝 我已經將這筆資訊整理好並暫存起來了。請問你要確認存入長期記憶嗎？\n(暫存 ID: %s)", pid)
+					}
 				} else {
 					if tc.Function.Name == "list_tasks" && strings.Contains(result, "沒有任何背景任務") {
 						// 讓 AI 知道現在是空的，讓它發揮創意回答
@@ -492,6 +556,24 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 				Role:    "tool",
 				Content: toolFeedback,
 			})
+		}
+
+		if forceBreakState {
+			if forcedAssistReply != "" {
+				// 如果有強制回覆，代表我們人工終止了生成迴圈並代答
+				a.Session.Messages = append(a.Session.Messages, ollama.Message{
+					Role:    "assistant",
+					Content: forcedAssistReply,
+				})
+				finalResponse = forcedAssistReply
+				if a.OnModelMessageComplete != nil {
+					a.OnModelMessageComplete(finalResponse)
+				}
+				if a.Logger != nil {
+					a.Logger.LogAIResponse(finalResponse)
+				}
+			}
+			break // 打破外層的狀態機迴圈
 		}
 	}
 

@@ -109,15 +109,11 @@ func sessionToText(s *Session) string {
 	return sb.String()
 }
 
-// saveToKnowledgeBase 輔助函式：存入長期記憶
+// saveToKnowledgeBase 輔助函式：存入長期對話摘要庫
 func saveToKnowledgeBase(summary string) error {
-	if GlobalMemoryToolKit != nil {
-		return GlobalMemoryToolKit.WriteLongTerm("summarize", summary)
-	}
-
-	// Fallback: 直接寫入檔案
+	// 避免將自動摘要直接寫入會干擾使用者確認機制的 MEMORY.md 中，因此改存到 auto_summaries.md
 	home, _ := os.Getwd()
-	path := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
+	path := filepath.Join(home, "botmemory", "history", "auto_summaries.md")
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

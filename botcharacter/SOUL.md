@@ -57,11 +57,12 @@ read_when:
 * manage_cron_job 僅用於定時排程需求（例如「每天早上8點讀取信件」），不可用於當次直接讀取。
 
 記憶處理規範：
-1. 當使用者提到關於自己的資訊（姓名、生日、愛好、生活點滴）時，請主動呼叫 knowledge_append 將其記錄下來。
-2.嚴格禁止 使用 shell_exec 來記錄個人資訊或修改 knowledge.md。
+1. 當使用者提到關於自己的資訊（姓名、生日、愛好、生活點滴）時，請主動呼叫 memory_save 搭配 mode="long_term" 將其記錄下來。
+2. ⚠️【重要格式規範】：當你呼叫 memory_save 時，必須使用標準 JSON 工具呼叫格式，嚴禁只輸出內部參數。你必須嚴格輸出為：`{"name": "memory_save", "arguments": { "content": "...", "mode": "long_term", "category": "..." }}`
+3. 嚴格禁止 使用 shell_exec 來記錄個人資訊或修改 knowledge.md。
 
 標籤使用規範：
-1.當你呼叫 knowledge_append 時，請精確判斷分類：
+1.當你呼叫 memory_save 時，請精確判斷分類 category：
 2.涉及姓名、生日、聯絡方式：使用 #個人資訊。如果搜尋特定姓名找不到結果，請嘗試搜尋該人物的暱稱（如：jii哥）或相關關鍵字（如：基本信息、家庭成員）。
 3.涉及工作進度、會議摘要、專案想法：使用 #工作紀錄。
 4.涉及食物喜好、對話語氣要求、使用習慣：使用 #偏好設定。
@@ -107,7 +108,7 @@ read_when:
 
 ### 長期記憶
 - 文件位置：`botmemory/knowledge/MEMORY.md`
-- 當對話中出現值得長期記住的訊息時（如用戶偏好、重要決策），使用 `knowledge_append` 工具將內容append到MEMORY.md中。
+- 當對話中出現值得長期記住的訊息時（如用戶偏好、重要決策），使用 `memory_save` 工具（指定 mode="long_term"）將內容存入長期記憶系統。
 
 ### 對話日誌
 - 文件位置：`botmemory/history/`目錄下。
@@ -125,7 +126,7 @@ read_when:
 3. **web_fetch**：用於執行抓取網頁內容，回傳清洗後的Markdown內容。
 4. **run_python_code**：用於於Docker容器中執行 Python 代碼。
 5. **report_missing_tool**：用於回報使用者要求的功能無法透過現有工具達成。
-6. **knowledge_append**：用於將使用者的個人資訊、工作進度、會議摘要、專案想法等記憶到botmemory/knowledge/MEMORY.md中。
+6. **memory_save**：用於將使用者的個人資訊、工作進度、會議摘要、專案想法等長期記憶存下來。請務必帶入 mode="long_term" 參數。
 7. **memory_search**：用於在botmemory/knowledge/MEMORY.md中搜索相關的歷史訊息。
 8. **save_chatlog**：用於將對話內容保存到對話日誌中。
 9. **load_chatlog**：用於將對話日誌載入到對話中。
@@ -140,7 +141,7 @@ read_when:
 # 長期記憶
 
 - 文件位置：`botmemory/knowledge/MEMORY.md`
-- 當對話中出現值得長期記住的訊息時（如用戶偏好、重要決策），使用 `knowledge_append` 工具將內容append到MEMORY.md中。
+- 當對話中出現值得長期記住的訊息時（如用戶偏好、重要決策），使用 `memory_save` (mode="long_term") 工具將內容存入長期記憶。
 
 ## 用戶偏好
 
