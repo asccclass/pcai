@@ -18,6 +18,8 @@
     - `knowledge_append`: 主動將重要資訊寫入永久記憶。
     - `skill_scaffold`: 自動建立新 Skill 骨架目錄 (含 SKILL.md 範本)。
     - `skill_validate`: 驗證 Skill 是否符合 agentskills.io 規格。
+    - `bot_interact`: 透過 HTTP Web API (`/api/chat`) 實現跨機器的 **Bot-to-Bot 協同作業**，AI 間可以直接派發任務。
+    - `browser_*`: 內建強大的 **Playwright-go** 瀏覽器自動化引擎，提供精準的 ARIA 快照與無干擾自動等待操作 (免除手刻 CSS Selector 煩惱)。
 - **🎯 智慧工具路由 (Tool Hints)**:
     - 自動偵測使用者意圖，導向正確工具（如「記住」→ `knowledge_append`、「列出檔案」→ `fs_list_dir`）。
     - 處理 LLM 工具名稱幻覺（自動修正錯誤工具名稱）。
