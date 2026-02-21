@@ -8,5 +8,6 @@ credentials.json
 token.json
 envfile
 user_workspace/*
+botmemory/*
 sandbox/*
 temp_*
