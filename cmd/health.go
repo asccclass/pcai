@@ -71,12 +71,9 @@ var healthCmd = &cobra.Command{
 				fmt.Println(successStyle.Render("● " + diskInfo))
 			}
 		*/
-		// 3. 檢查知識庫 (MEMORY.md / knowledge.md)
+		// 3. 檢查長期記憶庫 (MEMORY.md)
 		home, _ := os.Getwd()
 		kPath := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
-		if _, err := os.Stat(kPath); os.IsNotExist(err) {
-			kPath = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-		}
 		fmt.Print(labelStyle.Render("3.長期記憶 (RAG)："))
 		if info, err := os.Stat(kPath); err == nil {
 			sizeKB := float64(info.Size()) / 1024

@@ -28,12 +28,7 @@ func GetRAGEnhancedPrompt() string {
 	path := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		// 向下相容：嘗試 knowledge.md
-		path = filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-		data, err = os.ReadFile(path)
-		if err != nil {
-			return "" // 無記憶
-		}
+		return "" // 無記憶
 	}
 
 	content := string(data)
@@ -49,11 +44,6 @@ func ClearKnowledgeBase() error {
 	// 嘗試刪除 MEMORY.md
 	memoryPath := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
 	if err := os.Remove(memoryPath); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	// 向下相容：也嘗試刪除 knowledge.md
-	legacyPath := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
-	if err := os.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
@@ -109,9 +99,11 @@ func ArchiveAndSummarize(modelName string) {
 	})
 
 	if err == nil {
-		// 將歸納內容存入 RAG 資料庫 (knowledge.md)
-		f, _ := os.OpenFile("knowledge.md", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(fmt.Sprintf("\n## %s (%s)\n%s", s.Title, time.Now().Format("2006-01-02"), summaryResult.String()))
+		// 將歸納內容存入 RAG 資料庫 (MEMORY.md)
+		home, _ := os.Getwd()
+		memoryPath := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
+		f, _ := os.OpenFile(memoryPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(fmt.Sprintf("\n## %s (%s)\n%s\n\n---\n", s.Title, time.Now().Format("2006-01-02"), summaryResult.String()))
 		f.Close()
 
 		// 重置 Session（RAG 的精髓：歸納後清除細節，只留精華）

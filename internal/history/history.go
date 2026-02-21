@@ -84,7 +84,7 @@ func CheckAndSummarize(s *Session, modelName string, systemPrompt string) {
 		})
 
 		if err == nil {
-			// 存入 knowledge.md
+			// 存入 auto_summaries.md
 			if err := saveToKnowledgeBase(summaryResult.String()); err == nil {
 				// 歸納成功後，清空當前訊息流，保留 Context 指標 (或視需求全清)
 				s.Messages = []ollama.Message{
