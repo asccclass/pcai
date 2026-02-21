@@ -64,13 +64,13 @@ func (t *BrowserSnapshotTool) Definition() api.Tool {
 		"type": "function",
 		"function": {
 			"name": "browser_snapshot",
-			"description": "分析當前頁面，回傳可互動元素的參考 (refs like @e1, @e2). 必須先執行 browser_open.",
+			"description": "獲取畫面結構與互動元素 (ARIA Snapshot). 必須先執行 browser_open. 回傳格式為: '- role \"名稱\" [ref=@e1]', 例如 '- button \"登入\" [ref=@e1]'. 後續呼叫 browser_click 或 browser_type 時請傳入此 @e1.",
 			"parameters": {
 				"type": "object",
 				"properties": {
 					"interactive_only": {
 						"type": "boolean",
-						"description": "是否只抓取可互動元素 (default: true). Set false for full page structure (expensive)."
+						"description": "是否只抓取可互動元素 (default: true). Set to false to see text content like headings and paragraphs."
 					}
 				}
 			}

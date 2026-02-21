@@ -1,26 +1,23 @@
 package browser
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/cdproto/dom"
-	"github.com/chromedp/cdproto/input"
-	"github.com/chromedp/chromedp"
+	"github.com/playwright-community/playwright-go"
 )
 
-// BrowserManager handles persistent browser sessions
+// BrowserManager handles persistent browser sessions using Playwright
 type BrowserManager struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	allocCtx    context.Context
-	allocCancel context.CancelFunc
+	pw      *playwright.Playwright
+	browser playwright.Browser
+	context playwright.BrowserContext
+	page    playwright.Page
 
 	mu        sync.Mutex
-	refs      map[string]*cdp.Node
+	refs      map[string]playwright.Locator
 	lastRefID int
 }
 
@@ -33,42 +30,60 @@ var (
 func GetManager() *BrowserManager {
 	once.Do(func() {
 		instance = &BrowserManager{
-			refs: make(map[string]*cdp.Node),
+			refs: make(map[string]playwright.Locator),
 		}
 	})
 	return instance
 }
 
-// EnsureContext makes sure a browser is running
+// EnsureContext makes sure a Playwright browser & page are running
 func (m *BrowserManager) EnsureContext() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.ctx != nil {
-		// Check liveness?
-		select {
-		case <-m.ctx.Done():
-			// Restart if dead
-			m.ctx = nil
-		default:
+	if m.page != nil {
+		// Check liveness: if it's closed, we'll recreate
+		if !m.page.IsClosed() {
 			return nil
 		}
+		m.cleanUp()
 	}
 
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true), // Headless for server env
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
-	)
-
-	m.allocCtx, m.allocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
-	m.ctx, m.cancel = chromedp.NewContext(m.allocCtx)
-
-	// Ensure browser is actually started
-	if err := chromedp.Run(m.ctx); err != nil {
-		return err
+	pw, err := playwright.Run()
+	if err != nil {
+		return fmt.Errorf("could not start Playwright: %w", err)
 	}
+	m.pw = pw
+
+	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(true), // Headless for server env
+		Args: []string{
+			"--disable-gpu",
+			"--no-sandbox",
+		},
+	})
+	if err != nil {
+		m.cleanUp()
+		return fmt.Errorf("could not launch Chromium: %w", err)
+	}
+	m.browser = browser
+
+	context, err := browser.NewContext(playwright.BrowserNewContextOptions{
+		UserAgent: playwright.String("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
+	})
+	if err != nil {
+		m.cleanUp()
+		return fmt.Errorf("could not create context: %w", err)
+	}
+	m.context = context
+
+	page, err := context.NewPage()
+	if err != nil {
+		m.cleanUp()
+		return fmt.Errorf("could not create page: %w", err)
+	}
+	m.page = page
+
 	return nil
 }
 
@@ -83,7 +98,12 @@ func (m *BrowserManager) Navigate(url string) error {
 		url = "https://" + url
 	}
 
-	return chromedp.Run(m.ctx, chromedp.Navigate(url))
+	// Wait until network is mostly idle to ensure dynamic content loads
+	_, err := m.page.Goto(url, playwright.PageGotoOptions{
+		WaitUntil: playwright.WaitUntilStateNetworkidle,
+		Timeout:   playwright.Float(30000), // 30s timeout
+	})
+	return err
 }
 
 // Snapshot parses the DOM and returns a list of interactive elements with refs
@@ -93,49 +113,103 @@ func (m *BrowserManager) Snapshot(interactiveOnly bool) (string, error) {
 	}
 
 	m.mu.Lock()
-	m.refs = make(map[string]*cdp.Node) // Clear old refs
+	m.refs = make(map[string]playwright.Locator) // Clear old refs
 	m.lastRefID = 0
 	m.mu.Unlock()
 
-	var nodes []*cdp.Node
-	// Selector for interactive elements
-	sel := "a, button, input, select, textarea, [role='button'], [role='link']"
-	if !interactiveOnly {
-		sel = "*"
-	}
-
-	// We utilize `chromedp.Nodes` which waits for the nodes to be ready
-	// Using ByQueryAll to find all matching
-	if err := chromedp.Run(m.ctx, chromedp.Nodes(sel, &nodes, chromedp.ByQueryAll)); err != nil {
-		return "", err
-	}
-
 	var sb strings.Builder
-	var url string
-	chromedp.Run(m.ctx, chromedp.Location(&url))
-	sb.WriteString(fmt.Sprintf("Page URL: %s\n\n", url))
+	sb.WriteString(fmt.Sprintf("Page URL: %s\n\n", m.page.URL()))
+
+	// Use Playwright's getByRole to find interactive elements
+	// To replicate OpenClaw's robust ARIA snapshot, we search for common interactive roles.
+	rolesToFind := []*playwright.AriaRole{
+		playwright.AriaRoleButton,
+		playwright.AriaRoleLink,
+		playwright.AriaRoleTextbox,
+		playwright.AriaRoleCheckbox,
+		playwright.AriaRoleRadio,
+		playwright.AriaRoleCombobox,
+		playwright.AriaRoleSearchbox,
+		playwright.AriaRoleMenuitem,
+		playwright.AriaRoleTab,
+	}
+
+	if !interactiveOnly {
+		rolesToFind = append(rolesToFind,
+			playwright.AriaRoleHeading,
+			playwright.AriaRoleListitem,
+			playwright.AriaRoleArticle,
+		)
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	count := 0
-	for _, node := range nodes {
-		// Simplistic filtering: skip hidden?
-		// Requires extra roundtrips. We skip for now.
-
-		m.lastRefID++
-		ref := fmt.Sprintf("@e%d", m.lastRefID)
-		m.refs[ref] = node
-
-		desc := m.getNodeDesc(node)
-		if desc == "" {
+	for _, rolePtr := range rolesToFind {
+		if rolePtr == nil {
 			continue
 		}
+		role := *rolePtr
+		loc := m.page.GetByRole(role)
 
-		sb.WriteString(fmt.Sprintf("%s %s\n", ref, desc))
-		count++
+		// Wait a tiny bit for stability (optional, page is usually idle here)
+
+		numElements, err := loc.Count()
+		if err != nil {
+			continue // Skip if error counting
+		}
+
+		for i := 0; i < numElements; i++ {
+			nthLoc := loc.Nth(i)
+
+			// Try to ensure it's visible before mapping it
+			visible, err := nthLoc.IsVisible()
+			if err != nil || !visible {
+				continue
+			}
+
+			// Get accessible name or text content
+			name := ""
+			textContent, err := nthLoc.TextContent()
+			if err == nil {
+				name = strings.TrimSpace(textContent)
+			}
+
+			// Get placeholder or value for inputs if empty name
+			if name == "" {
+				if placeholder, err := nthLoc.GetAttribute("placeholder"); err == nil && placeholder != "" {
+					name = placeholder
+				} else if val, err := nthLoc.InputValue(); err == nil && val != "" {
+					// InputValue works for inputs/textareas
+					name = val
+				} else if ariaLabel, err := nthLoc.GetAttribute("aria-label"); err == nil && ariaLabel != "" {
+					name = ariaLabel
+				}
+			}
+
+			// Squeeze whitespace
+			name = strings.Join(strings.Fields(name), " ")
+			if len(name) > 50 {
+				name = name[:47] + "..."
+			}
+
+			m.lastRefID++
+			ref := fmt.Sprintf("@e%d", m.lastRefID)
+			m.refs[ref] = nthLoc
+
+			if name != "" {
+				sb.WriteString(fmt.Sprintf("- %s %q [ref=%s]\n", string(role), name, ref))
+			} else {
+				sb.WriteString(fmt.Sprintf("- %s [ref=%s]\n", string(role), ref))
+			}
+			count++
+			if count > 200 {
+				break
+			}
+		}
 		if count > 200 {
-			sb.WriteString("... (truncated to 200 elements, use filtering if needed) ...\n")
+			sb.WriteString("... (truncated to 200 elements) ...\n")
 			break
 		}
 	}
@@ -147,65 +221,36 @@ func (m *BrowserManager) Snapshot(interactiveOnly bool) (string, error) {
 	return sb.String(), nil
 }
 
-func (m *BrowserManager) getNodeDesc(node *cdp.Node) string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[%s]", strings.ToLower(node.NodeName)))
-
-	// Iterate attributes
-	for i := 0; i < len(node.Attributes); i += 2 {
-		k := node.Attributes[i]
-		v := node.Attributes[i+1]
-		switch k {
-		case "type", "placeholder", "name", "id", "aria-label", "alt", "href", "value":
-			sb.WriteString(fmt.Sprintf(" %s=%q", k, v))
-		}
-	}
-
-	// Try to get text content from first child if text
-	// This is cached in the node passed back by chromedp if we requested it?
-	// `chromedp.Nodes` might not populate full subtree.
-	// But `node.Children` might be populated if we asked?
-	// Default `Nodes` does NOT populate children recursively unless `chromedp.WithSubtree`?
-	// Actually `Nodes` populates some info.
-	// Let's rely on what we have. If no text, we might need to `Evaluate` to get text.
-	// For performance, we skip `Evaluate` per node.
-
-	// We can cheat: JS helper to return all info at once is better in future optimization.
-
-	return sb.String()
-}
-
 // Click Ref
 func (m *BrowserManager) Click(ref string) error {
 	m.mu.Lock()
-	node, ok := m.refs[ref]
+	loc, ok := m.refs[ref]
 	m.mu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("ref %s not found. Page might have reloaded. Please snapshot again.", ref)
+		return fmt.Errorf("ref %s not found. Page might have reloaded. Please snapshot again", ref)
 	}
 
-	// MouseClickNode is a direct CDP way
-	return chromedp.Run(m.ctx, chromedp.MouseClickNode(node))
+	// Playwright auto-scrolls into view and waits for actionability
+	return loc.Click(playwright.LocatorClickOptions{
+		Timeout: playwright.Float(5000), // 5s timeout
+	})
 }
 
 // Type into Ref
 func (m *BrowserManager) Type(ref, text string) error {
 	m.mu.Lock()
-	node, ok := m.refs[ref]
+	loc, ok := m.refs[ref]
 	m.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("ref %s not found", ref)
 	}
 
-	// Focus then InsertText
-	return chromedp.Run(m.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		if err := dom.Focus().WithNodeID(node.NodeID).Do(ctx); err != nil {
-			return err
-		}
-		// InsertText simulates typing
-		return input.InsertText(text).Do(ctx)
-	}))
+	// Playwright Fill clears it first, then types.
+	// If you want to simulate character-by-character typing without clearing, use Type()
+	return loc.Fill(text, playwright.LocatorFillOptions{
+		Timeout: playwright.Float(5000),
+	})
 }
 
 // Scroll
@@ -214,73 +259,60 @@ func (m *BrowserManager) Scroll(direction string) error {
 		return err
 	}
 
-	script := "window.scrollBy(0, 500)"
+	script := "window.scrollBy(0, window.innerHeight * 0.8)"
 	if direction == "up" {
-		script = "window.scrollBy(0, -500)"
+		script = "window.scrollBy(0, -window.innerHeight * 0.8)"
 	} else if direction == "top" {
 		script = "window.scrollTo(0, 0)"
 	} else if direction == "bottom" {
 		script = "window.scrollTo(0, document.body.scrollHeight)"
 	}
 
-	return chromedp.Run(m.ctx, chromedp.Evaluate(script, nil))
+	_, err := m.page.Evaluate(script)
+
+	// Wait a moment for dynamic lazy-loaded content
+	time.Sleep(500 * time.Millisecond)
+
+	return err
 }
 
 // GetText
 func (m *BrowserManager) GetText(ref string) (string, error) {
 	m.mu.Lock()
-	node, ok := m.refs[ref]
+	loc, ok := m.refs[ref]
 	m.mu.Unlock()
 	if !ok {
 		return "", fmt.Errorf("ref %s not found", ref)
 	}
 
-	var res string
-	// Using remote object to get innerText
-	err := chromedp.Run(m.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		// Resolve node to object ID
-		obj, err := dom.ResolveNode().WithNodeID(node.NodeID).Do(ctx)
-		if err != nil {
-			return err
-		}
-		// Call function on object
-		// We use `Runtime.callFunctionOn`
-		// But chromedp doesn't expose a clean helper for "call function on specific resolved object" easily without importing specific domains.
-		// Easier way: `chromedp.Evaluate` with internal logic?
+	// Return InnerText to strip HTML tags
+	return loc.InnerText()
+}
 
-		// Let's use `dom.GetOuterHTML` as fallback or `Javascript`.
-		// But we really want `innerText`.
-		// We can find the node by ID in JS? `document.evaluate`? No, we have NodeID.
-
-		// NOTE: chromedp `Text` uses a selector. We don't have a selector.
-		// We have to use the NodeID.
-
-		// Workaround:
-		// We can construct a remote function call:
-		// `function() { return this.innerText }`
-		// called on the object ID.
-		_ = obj // RemoteObject
-		// Not straightforward in pure `chromedp` high-level API.
-
-		// Fallback: Just return "GetText not fully implemented for refs yet, try snapshot".
-		// Or assume we have a selector? No.
-
-		// Let's use `dom.GetOuterHTML` which is supported by NodeID.
-		res, err = dom.GetOuterHTML().WithNodeID(node.NodeID).Do(ctx)
-		return err
-	}))
-
-	return res, err
+// cleanUp gracefully tears down Playwright instances
+func (m *BrowserManager) cleanUp() {
+	if m.page != nil {
+		m.page.Close()
+	}
+	if m.context != nil {
+		m.context.Close()
+	}
+	if m.browser != nil {
+		m.browser.Close()
+	}
+	if m.pw != nil {
+		m.pw.Stop()
+	}
+	m.page = nil
+	m.context = nil
+	m.browser = nil
+	m.pw = nil
 }
 
 // Close
 func (m *BrowserManager) Close() {
-	if m.cancel != nil {
-		m.cancel()
-	}
-	if m.allocCancel != nil {
-		m.allocCancel()
-	}
-	m.ctx = nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cleanUp()
 	m.refs = nil
 }

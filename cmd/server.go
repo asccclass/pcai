@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/asccclass/pcai/internal/agent"
 	"github.com/asccclass/pcai/internal/database"
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/webapi"
@@ -107,6 +108,20 @@ func runServe(cmd *cobra.Command, args []string) {
 	// 5a. API 路由
 	memHandler := webapi.NewMemoryHandler(memToolKit, sqliteDB)
 	memHandler.AddRoutes(router)
+
+	// --- [新增] Bot-to-Bot 聊天 API ---
+	// 初始化 System Logger (讓 API 產生的 Agent 也能記錄)
+	sysLogger, _ := agent.NewSystemLogger("botmemory")
+
+	chatModel := os.Getenv("MODEL")
+	if chatModel == "" {
+		chatModel = "llama3" // 預設模型 (應與 chat 模組對齊)
+	}
+	systemPrompt := os.Getenv("SYSTEM_PROMPT")
+
+	chatHandler := webapi.NewChatHandler(chatModel, systemPrompt, sysLogger)
+	chatHandler.AddRoutes(router)
+	// --------------------------------
 
 	// 5b. 靜態檔案服務
 	staticServer := SherryServer.StaticFileServer{documentRoot, "index.html"}

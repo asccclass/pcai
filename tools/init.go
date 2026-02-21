@@ -232,9 +232,12 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&VideoConverterTool{})
-	// registry.Register(&EmailTool{}) // Replaced by dynamic skill
+	registry.Register(&EmailTool{}) // Replaced by dynamic skill
 	registry.Register(NewGoogleTool())
 	registry.Register(&GitAutoCommitTool{}) // Git 自動提交工具
+
+	botInteractSkill := skills.NewBotInteractSkill()
+	registry.Register(botInteractSkill.CreateTool()) // [NEW] Bot-to-Bot 通訊技能
 
 	// Browser Tools
 	registry.Register(&browserskill.BrowserOpenTool{})
