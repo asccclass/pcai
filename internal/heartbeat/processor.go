@@ -193,14 +193,21 @@ func (b *PCAIBrain) CollectEnv(ctx context.Context) string {
 		}
 	*/
 
-	// C. 檢查是否需要執行每日自檢 (Daily Self-Test)
+	// C. 檢查是否需要執行定期自檢 (Self-Test at 00:00 and 12:00)
 	lastTest, err := b.DB.GetLastHeartbeatAction(ctx, "ACTION: SELF_TEST")
 	if err != nil {
 		fmt.Printf("⚠️ Check last test failed: %v\n", err)
 	}
-	// 如果從未執行過 (IsZero) 或 距離上次執行超過 24 小時
-	if lastTest.IsZero() || time.Since(lastTest) > 24*time.Hour {
-		sb.WriteString("\n### SYSTEM ALERT: DAILY_SELF_TEST_DUE ###\n(System has been idle and no self-test in last 24h. Please execute SELF_TEST.)\n")
+	// 如果在此 12 小時區間 (00:00-11:59 或 12:00-23:59) 尚未執行過
+	now := time.Now()
+	hour := 0
+	if now.Hour() >= 12 {
+		hour = 12
+	}
+	windowStart := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, now.Location())
+
+	if lastTest.IsZero() || lastTest.Before(windowStart) {
+		sb.WriteString("\n### SYSTEM ALERT: DAILY_SELF_TEST_DUE ###\n(Scheduled self-test is due. Please execute SELF_TEST.)\n")
 	}
 
 	return sb.String()
@@ -570,25 +577,26 @@ func (b *PCAIBrain) RunSelfTest(ctx context.Context) error {
 	shouldNotify := false
 	hasError := !strings.Contains(dbStatus, "PASS") || !strings.Contains(netStatus, "PASS") || !strings.Contains(llmStatus, "PASS") || !strings.Contains(toolStatus, "PASS")
 
-	// 檢查今日是否已執行過
+	// 檢查此區間 (00:00-11:59 或 12:00-23:59) 是否已執行過
 	// GetLastHeartbeatAction returns the *previous* run time since we haven't logged this one yet.
 	lastTest, err := b.DB.GetLastHeartbeatAction(ctx, "ACTION: SELF_TEST")
-	isFirstTestToday := false
-	if err != nil || lastTest.IsZero() {
-		isFirstTestToday = true
-	} else {
-		// 檢查上次執行時間是否為今天
-		y, m, d := time.Now().Date()
-		lastY, lastM, lastD := lastTest.Date()
-		if lastY != y || lastM != m || lastD != d {
-			isFirstTestToday = true
-		}
+	isFirstTestInWindow := false
+
+	now := time.Now()
+	hour := 0
+	if now.Hour() >= 12 {
+		hour = 12
+	}
+	windowStart := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, now.Location())
+
+	if err != nil || lastTest.IsZero() || lastTest.Before(windowStart) {
+		isFirstTestInWindow = true
 	}
 
-	if hasError || isFirstTestToday {
+	if hasError || isFirstTestInWindow {
 		shouldNotify = true
 	} else {
-		fmt.Println("ℹ️ [SelfTest] Notification skipped (Not first test of day & no errors).")
+		fmt.Println("ℹ️ [SelfTest] Notification skipped (Not first test in window & no errors).")
 	}
 
 	// 儲存完整報告到檔案

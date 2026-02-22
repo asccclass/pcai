@@ -4,165 +4,335 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PCAI Memory Manager</title>
-    <meta name="description" content="PCAI 記憶管理後台 — 管理 AI 記憶資料的 CRUD 介面">
+    <title>PCAI System Dashboard</title>
+    <meta name="description" content="PCAI 系統儀表板 — 全功能管理介面">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        *,
-        *::before,
-        *::after {
+        *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
 
         :root {
-            --bg-primary: #0a0e1a;
-            --bg-secondary: #111827;
-            --bg-card: rgba(17, 24, 39, 0.7);
-            --bg-glass: rgba(255, 255, 255, 0.04);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --border-glow: rgba(99, 102, 241, 0.3);
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
+            --bg-base: #0f172a;
+            --bg-glass-sidebar: rgba(15, 23, 42, 0.6);
+            --bg-glass-card: rgba(30, 41, 59, 0.5);
+            --bg-glass-hover: rgba(51, 65, 85, 0.6);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(99, 102, 241, 0.4);
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
             --text-muted: #64748b;
+            --accent-gradient: linear-gradient(135deg, #6366f1, #a855f7);
             --accent: #6366f1;
             --accent-light: #818cf8;
-            --accent-glow: rgba(99, 102, 241, 0.15);
             --success: #10b981;
-            --danger: #ef4444;
-            --danger-hover: #dc2626;
             --warning: #f59e0b;
-            --radius: 12px;
+            --danger: #ef4444;
+            --radius-lg: 16px;
+            --radius-md: 12px;
             --radius-sm: 8px;
-            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg-primary);
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-base);
             color: var(--text-primary);
             min-height: 100vh;
+            display: flex;
+            overflow: hidden;
             line-height: 1.6;
         }
 
-        /* Background gradient orbs */
+        /* Ambient Orbs */
         body::before {
             content: '';
             position: fixed;
-            top: -200px;
-            right: -200px;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
+            top: -10vw;
+            left: -10vw;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 60%);
+            border-radius: 50%;
             pointer-events: none;
             z-index: 0;
+            filter: blur(60px);
         }
 
         body::after {
             content: '';
             position: fixed;
-            bottom: -200px;
-            left: -200px;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 70%);
+            bottom: -15vw;
+            right: -10vw;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, transparent 60%);
+            border-radius: 50%;
             pointer-events: none;
             z-index: 0;
+            filter: blur(80px);
         }
 
-        .container {
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 24px 20px;
-            position: relative;
+        /* App Layout */
+        .app-container {
+            display: flex;
+            width: 100%;
+            height: 100vh;
             z-index: 1;
+            position: relative;
         }
 
-        /* =================== Header =================== */
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 20px 28px;
-            background: var(--bg-glass);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius);
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: var(--bg-glass-sidebar);
             backdrop-filter: blur(20px);
-            margin-bottom: 24px;
+            border-right: 1px solid var(--border-glass);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 16px;
+            transition: var(--transition);
         }
 
-        .header-left {
+        .brand {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 12px;
+            padding: 0 12px 32px 12px;
         }
 
-        .header-logo {
-            width: 42px;
-            height: 42px;
-            background: linear-gradient(135deg, var(--accent), #a855f7);
-            border-radius: 10px;
+        .brand-logo {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-gradient);
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 20px;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
         }
 
-        .header h1 {
-            font-size: 1.3rem;
+        .brand-text h1 {
+            font-size: 1.25rem;
             font-weight: 700;
             letter-spacing: -0.02em;
         }
 
-        .header h1 span {
-            color: var(--accent-light);
-        }
-
-        .stat-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: var(--accent-glow);
-            border: 1px solid var(--border-glow);
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.85rem;
+        .brand-text p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
             font-weight: 500;
-            color: var(--accent-light);
         }
 
-        .stat-badge .dot {
-            width: 8px;
-            height: 8px;
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: var(--bg-glass-hover);
+            color: var(--text-primary);
+        }
+
+        .nav-item.active {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--accent-light);
+            border-color: rgba(99, 102, 241, 0.2);
+            box-shadow: inset 0 0 20px rgba(99, 102, 241, 0.05);
+        }
+
+        .nav-item .icon {
+            font-size: 1.1rem;
+            width: 24px;
+            text-align: center;
+        }
+
+        .system-status-mini {
+            margin-top: auto;
+            padding: 16px;
+            border-radius: var(--radius-md);
+            background: rgba(16, 185, 129, 0.05);
+            border: 1px solid rgba(16, 185, 129, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
             background: var(--success);
             border-radius: 50%;
-            animation: pulse 2s infinite;
+            box-shadow: 0 0 10px var(--success);
+            animation: pulse-success 2s infinite;
         }
 
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.4;
-            }
+        @keyframes pulse-success {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
         }
 
-        /* =================== Tabs =================== */
-        .tabs {
+        .system-status-mini div {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--success);
+        }
+        
+        .system-status-mini span {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            display: block;
+        }
+
+        /* Main Area */
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+
+        /* Custom Scrollbar */
+        .main-area::-webkit-scrollbar {
+            width: 8px;
+        }
+        .main-area::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .main-area::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        .main-area::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .top-navbar {
+            padding: 24px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: linear-gradient(to bottom, var(--bg-base) 40%, transparent);
+            backdrop-filter: blur(10px);
+        }
+
+        .page-title h2 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: var(--text-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .view-section {
+            display: none;
+            padding: 0 40px 40px 40px;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .view-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* View: Overview */
+        .grid-dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .glass-card {
+            background: var(--bg-glass-card);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            backdrop-filter: blur(12px);
+            transition: var(--transition);
+        }
+
+        .glass-card:hover {
+            border-color: var(--border-glow);
+            box-shadow: 0 8px 32px rgba(99, 102, 241, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .card-icon {
+            font-size: 1.5rem;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .card-body {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .card-stat {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 12px 0;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* View: Memory Manager (adapted from original) */
+        .memory-tabs {
             display: flex;
             gap: 12px;
             margin-bottom: 24px;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-glass);
             padding-bottom: 12px;
         }
 
-        .tab {
+        .memory-tab {
             background: transparent;
             color: var(--text-secondary);
             border: none;
@@ -171,82 +341,67 @@
             font-weight: 500;
             cursor: pointer;
             border-radius: var(--radius-sm);
-            transition: all var(--transition);
+            transition: var(--transition);
         }
 
-        .tab:hover {
+        .memory-tab:hover {
             color: var(--text-primary);
-            background: var(--bg-glass);
+            background: rgba(255, 255, 255, 0.05);
         }
 
-        .tab.active {
+        .memory-tab.active {
             color: var(--accent-light);
-            background: var(--accent-glow);
-            box-shadow: 0 0 0 1px var(--border-glow);
+            background: rgba(99, 102, 241, 0.15);
+            box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3);
         }
 
-        /* =================== Create Section =================== */
-        .create-section {
-            background: var(--bg-glass);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius);
-            backdrop-filter: blur(20px);
+        .create-form {
+            background: var(--bg-glass-card);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md);
             padding: 24px;
             margin-bottom: 24px;
-        }
-
-        .create-section h2 {
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            backdrop-filter: blur(12px);
         }
 
         .form-group {
-            margin-bottom: 14px;
+            margin-bottom: 16px;
         }
 
         .form-group label {
             display: block;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             font-weight: 500;
             color: var(--text-muted);
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
-        textarea,
-        input[type="text"] {
+        textarea, input[type="text"], input[type="number"], select {
             width: 100%;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid var(--border-glass);
             border-radius: var(--radius-sm);
             padding: 12px 14px;
             color: var(--text-primary);
             font-family: inherit;
-            font-size: 0.9rem;
-            transition: border-color var(--transition);
+            font-size: 0.95rem;
+            transition: var(--transition);
             resize: vertical;
         }
 
-        textarea:focus,
-        input[type="text"]:focus {
+        textarea:focus, input[type="text"]:focus, input[type="number"]:focus, select:focus {
             outline: none;
             border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-glow);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
         }
 
-        textarea {
-            min-height: 100px;
-        }
+        textarea { min-height: 100px; }
 
         .form-row {
             display: flex;
-            gap: 12px;
+            gap: 16px;
             align-items: flex-end;
         }
 
@@ -255,443 +410,353 @@
             margin-bottom: 0;
         }
 
-        /* =================== Buttons =================== */
         .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            padding: 10px 20px;
+            gap: 8px;
+            padding: 10px 24px;
             border: none;
             border-radius: var(--radius-sm);
             font-family: inherit;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all var(--transition);
+            transition: var(--transition);
             white-space: nowrap;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--accent), #7c3aed);
+            background: var(--accent-gradient);
             color: white;
-            box-shadow: 0 2px 12px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
         }
 
         .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
         }
 
-        .btn-sm {
-            padding: 6px 12px;
-            font-size: 0.78rem;
-        }
+        .btn-sm { padding: 6px 14px; font-size: 0.8rem; }
+        .btn-edit { background: rgba(99, 102, 241, 0.15); color: var(--accent-light); border: 1px solid rgba(99, 102, 241, 0.3); }
+        .btn-edit:hover { background: rgba(99, 102, 241, 0.25); }
+        .btn-danger { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .btn-danger:hover { background: rgba(239, 68, 68, 0.25); }
+        .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-glass); }
+        .btn-ghost:hover { background: rgba(255, 255, 255, 0.05); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
-        .btn-edit {
-            background: rgba(99, 102, 241, 0.12);
-            color: var(--accent-light);
-            border: 1px solid rgba(99, 102, 241, 0.2);
-        }
-
-        .btn-edit:hover {
-            background: rgba(99, 102, 241, 0.22);
-        }
-
-        .btn-danger {
-            background: rgba(239, 68, 68, 0.1);
-            color: var(--danger);
-            border: 1px solid rgba(239, 68, 68, 0.2);
-        }
-
-        .btn-danger:hover {
-            background: rgba(239, 68, 68, 0.2);
-        }
-
-        .btn-ghost {
-            background: transparent;
-            color: var(--text-secondary);
-            border: 1px solid var(--border-color);
-        }
-
-        .btn-ghost:hover {
-            background: var(--bg-glass);
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        /* =================== Entry Cards =================== */
+        /* Memory Entries List */
         .entries-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
         }
 
-        .entries-header h2 {
-            font-size: 0.95rem;
-            font-weight: 600;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .search-box {
-            position: relative;
-        }
-
+        .search-box { position: relative; }
         .search-box input {
-            width: 260px;
-            padding: 8px 14px 8px 36px;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            color: var(--text-primary);
-            font-size: 0.85rem;
+            width: 300px;
+            padding: 10px 16px 10px 40px;
+            border-radius: 24px;
+            background: rgba(15, 23, 42, 0.6);
         }
-
-        .search-box input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
         .search-box::before {
             content: '🔍';
             position: absolute;
-            left: 12px;
+            left: 14px;
             top: 50%;
             transform: translateY(-50%);
-            font-size: 0.8rem;
+            font-size: 0.9rem;
+            opacity: 0.6;
         }
 
         .entries-list {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
         }
 
         .entry-card {
-            background: var(--bg-glass);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius);
-            padding: 18px 20px;
-            transition: all var(--transition);
-            backdrop-filter: blur(12px);
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            transition: var(--transition);
         }
 
         .entry-card:hover {
-            border-color: var(--border-glow);
-            box-shadow: 0 2px 16px rgba(99, 102, 241, 0.06);
+            border-color: rgba(99, 102, 241, 0.3);
+            background: rgba(30, 41, 59, 0.6);
         }
 
-        .entry-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 10px;
-        }
-
+        .entry-top { display: flex; justify-content: space-between; margin-bottom: 12px; }
         .entry-id {
             font-family: 'Courier New', monospace;
-            font-size: 0.72rem;
-            color: var(--text-muted);
-            background: var(--bg-secondary);
+            font-size: 0.75rem;
+            color: var(--accent-light);
+            background: rgba(99, 102, 241, 0.1);
             padding: 2px 8px;
             border-radius: 4px;
         }
-
-        .entry-time {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
+        .entry-time { font-size: 0.8rem; color: var(--text-muted); }
         .entry-content {
-            font-size: 0.9rem;
-            color: var(--text-primary);
-            line-height: 1.7;
-            margin-bottom: 12px;
-            word-break: break-word;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            margin-bottom: 16px;
             white-space: pre-wrap;
+            word-break: break-word;
         }
-
         .entry-content.truncated {
             max-height: 80px;
             overflow: hidden;
             position: relative;
         }
-
         .entry-content.truncated::after {
             content: '';
             position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 40px;
-            background: linear-gradient(transparent, var(--bg-card));
+            bottom: 0; left: 0; right: 0; height: 40px;
+            background: linear-gradient(transparent, rgba(30, 41, 59, 0.9));
         }
-
-        .entry-bottom {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .tags {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
+        .entry-bottom { display: flex; justify-content: space-between; align-items: center; }
+        .tags { display: flex; gap: 8px; flex-wrap: wrap; }
         .tag {
-            font-size: 0.72rem;
+            font-size: 0.75rem;
             font-weight: 500;
-            padding: 3px 10px;
+            padding: 4px 12px;
             border-radius: 12px;
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--accent-light);
-            border: 1px solid rgba(99, 102, 241, 0.15);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
         }
+        .actions { display: flex; gap: 8px; }
 
-        .actions {
-            display: flex;
-            gap: 6px;
-        }
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.5; }
+        
+        .loading { display: flex; align-items: center; justify-content: center; padding: 40px; gap: 12px; color: var(--text-muted); }
+        .spinner { width: 24px; height: 24px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-muted);
-        }
-
-        .empty-state .icon {
-            font-size: 3rem;
-            margin-bottom: 12px;
-        }
-
-        .empty-state p {
-            font-size: 0.9rem;
-        }
-
-        /* =================== Modal =================== */
+        /* Modals & Toasts */
         .modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(4px);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
+            display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px); z-index: 100; align-items: center; justify-content: center;
         }
-
-        .modal-overlay.active {
-            display: flex;
-        }
-
+        .modal-overlay.active { display: flex; }
         .modal {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius);
-            padding: 28px;
-            width: 90%;
-            max-width: 560px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            animation: modalIn 0.2s ease-out;
+            background: #1e293b; border: 1px solid var(--border-glass); border-radius: var(--radius-lg); padding: 32px; width: 90%; max-width: 600px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); animation: modalIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
-
         @keyframes modalIn {
-            from {
-                opacity: 0;
-                transform: scale(0.95) translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: scale(1) translateY(0);
-            }
+            from { opacity: 0; transform: scale(0.95) translateY(20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
         }
+        .modal h3 { font-size: 1.25rem; font-weight: 600; margin-bottom: 24px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
 
-        .modal h3 {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .modal-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        /* =================== Toast =================== */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 200;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
+        .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 200; display: flex; flex-direction: column; gap: 12px; }
         .toast {
-            padding: 12px 20px;
-            border-radius: var(--radius-sm);
-            font-size: 0.85rem;
-            font-weight: 500;
-            animation: toastIn 0.3s ease-out;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            padding: 14px 24px; border-radius: var(--radius-md); font-size: 0.9rem; font-weight: 500; animation: toastIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            background: #1e293b; color: white; border-left: 4px solid var(--accent);
         }
-
-        .toast.success {
-            background: var(--success);
-            color: white;
-        }
-
-        .toast.error {
-            background: var(--danger);
-            color: white;
-        }
-
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
         @keyframes toastIn {
-            from {
-                opacity: 0;
-                transform: translateX(40px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
-        /* =================== Loading =================== */
-        .loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 40px;
-            color: var(--text-muted);
-            gap: 10px;
-        }
-
-        .spinner {
-            width: 20px;
-            height: 20px;
-            border: 2px solid var(--border-color);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+            from { opacity: 0; transform: translateX(50px) scale(0.9); }
+            to { opacity: 1; transform: translateX(0) scale(1); }
         }
 
         /* Responsive */
-        @media (max-width: 640px) {
-            .header {
-                flex-direction: column;
-                gap: 12px;
-            }
-
-            .form-row {
-                flex-direction: column;
-            }
-
-            .search-box input {
-                width: 100%;
-            }
-
-            .entries-header {
-                flex-direction: column;
-                gap: 10px;
-            }
+        @media (max-width: 768px) {
+            .app-container { flex-direction: column; }
+            .sidebar { width: 100%; height: auto; padding: 16px; border-right: none; border-bottom: 1px solid var(--border-glass); flex-direction: row; justify-content: space-between; align-items: center;}
+            .brand { padding: 0; margin: 0; }
+            .nav-menu { flex-direction: row; overflow-x: auto; flex: unset; margin-left: 16px;}
+            .nav-item { padding: 8px 12px; white-space: nowrap; }
+            .system-status-mini { display: none; }
+            .form-row { flex-direction: column; }
+            .entries-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+            .search-box input { width: 100%; }
+            .view-section { padding: 0 20px 20px 20px; }
+            .top-navbar { padding: 20px; }
         }
     </style>
 </head>
 
 <body>
-
-    <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-left">
-                <div class="header-logo">🧠</div>
-                <h1>PCAI <span>Memory</span> Manager</h1>
-            </div>
-            <div class="stat-badge">
-                <span class="dot"></span>
-                <span id="totalCount">載入中...</span>
-            </div>
-        </div>
-
-        <!-- Tabs -->
-        <div class="tabs">
-            <button class="tab active" data-tab="long_term" onclick="switchTab('long_term')">長期記憶 (RAG)</button>
-            <button class="tab" data-tab="short_term" onclick="switchTab('short_term')">短期記憶 (SQLite)</button>
-        </div>
-
-        <!-- Create -->
-        <div class="create-section">
-            <h2>➕ 新增記憶</h2>
-            <div class="form-group">
-                <label>內容 Content</label>
-                <textarea id="createContent" placeholder="輸入記憶內容..."></textarea>
-            </div>
-            <div class="form-row">
-                <div class="form-group" style="flex: 0.5;">
-                    <label>儲存類型</label>
-                    <select id="createMode"
-                        style="width:100%; padding:12px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:var(--radius-sm); color:var(--text-primary); font-size:0.9rem;"
-                        onchange="toggleCreateFields()">
-                        <option value="long_term">長期記憶 (分類)</option>
-                        <option value="short_term">短期記憶 (TTL)</option>
-                    </select>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">🧠</div>
+                <div class="brand-text">
+                    <h1>PCAI</h1>
+                    <p>Advanced Contextual AI</p>
                 </div>
-                <div class="form-group" id="tagsFieldGroup">
-                    <label>特徵 / 分類（或標籤）</label>
-                    <input type="text" id="createTags" placeholder="預設: general">
+            </div>
+            
+            <nav class="nav-menu">
+                <div class="nav-item active" onclick="switchView('overview')" id="nav-overview">
+                    <span class="icon">📊</span>
+                    <span>系統總覽</span>
                 </div>
-                <div class="form-group" id="ttlFieldGroup" style="display: none;">
-                    <label>有效天數 (TTL)</label>
-                    <input type="number" id="createTTL" placeholder="預設: 7" value="7" min="1">
+                <div class="nav-item" onclick="switchView('memory')" id="nav-memory">
+                    <span class="icon">🗄️</span>
+                    <span>記憶管理</span>
                 </div>
-                <button class="btn btn-primary" id="createBtn" onclick="createEntry()">
-                    <span>新增</span>
-                </button>
-            </div>
-        </div>
+                <div class="nav-item" onclick="switchView('automation')" id="nav-automation">
+                    <span class="icon">⏱️</span>
+                    <span>排程任務</span>
+                </div>
+                <div class="nav-item" onclick="switchView('browser')" id="nav-browser">
+                    <span class="icon">🌐</span>
+                    <span>瀏覽器助手</span>
+                </div>
+                <div class="nav-item" onclick="switchView('skills')" id="nav-skills">
+                    <span class="icon">🧩</span>
+                    <span>擴充技能</span>
+                </div>
+            </nav>
 
-        <!-- Entries -->
-        <div class="entries-header">
-            <h2>📋 記憶列表</h2>
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="搜尋記憶..." oninput="filterEntries()">
+            <div class="system-status-mini">
+                <div class="status-dot"></div>
+                <div>
+                    <div>系統運行中</div>
+                    <span>Heartbeat 正常</span>
+                </div>
             </div>
-        </div>
+        </aside>
 
-        <div id="entriesList" class="entries-list">
-            <div class="loading">
-                <div class="spinner"></div>載入中...
-            </div>
-        </div>
+        <!-- Main Content Area -->
+        <main class="main-area">
+            <header class="top-navbar">
+                <div class="page-title">
+                    <h2 id="pageTitleText">系統總覽</h2>
+                </div>
+                <!-- Right side can have user profile or notifications later -->
+            </header>
+
+            <!-- ================= OVERVIEW VIEW ================= -->
+            <section id="view-overview" class="view-section active">
+                <div class="grid-dashboard">
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon" style="color: var(--accent-light);">🤖</div>
+                            <div class="card-title">Agent 核心</div>
+                        </div>
+                        <div class="card-body">
+                            <p>身分設定: <strong>F.R.I.D.A.Y</strong> (SOUL.md)</p>
+                            <p>語言模型: <strong>Ollama Local</strong></p>
+                            <p>目前狀態: <span style="color: var(--success);">閒置待命</span></p>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon" style="color: #60a5fa;">💾</div>
+                            <div class="card-title">記憶狀態</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="card-stat" id="overview-memory-count">-</div>
+                            <p>已建置的記憶節點</p>
+                            <p style="margin-top: 8px; font-size: 0.8rem;">自動摘要引擎啟用中</p>
+                        </div>
+                    </div>
+
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon" style="color: #fca5a5;">⚡</div>
+                            <div class="card-title">Heartbeat 監控</div>
+                        </div>
+                        <div class="card-body">
+                            <p>週期: <strong>動態排程</strong></p>
+                            <p>後台任務數: <strong>0</strong></p>
+                            <p style="margin-top: 8px; font-size: 0.8rem;">深夜勿擾模式將於 00:00 啟動</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= MEMORY MANAGER VIEW (Original Logic Preserved) ================= -->
+            <section id="view-memory" class="view-section">
+                <div class="memory-tabs">
+                    <button class="memory-tab active" data-tab="long_term" onclick="switchMemoryTab('long_term')">長期記憶 (RAG)</button>
+                    <button class="memory-tab" data-tab="short_term" onclick="switchMemoryTab('short_term')">短期記憶 (SQLite)</button>
+                </div>
+
+                <div class="create-form">
+                    <h3 style="margin-bottom: 16px; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--accent-light);">➕</span> 新增記憶記錄
+                    </h3>
+                    <div class="form-group">
+                        <label>內容 Content</label>
+                        <textarea id="createContent" placeholder="在此輸入要令 AI 學習或暫存的記憶內容..."></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 0.5;">
+                            <label>儲存類型</label>
+                            <select id="createMode" onchange="toggleCreateFields()">
+                                <option value="long_term">長期記憶 (分類歸檔)</option>
+                                <option value="short_term">短期記憶 (排程 TTL)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="tagsFieldGroup">
+                            <label>特徵 / 分類（或標籤）</label>
+                            <input type="text" id="createTags" placeholder="預設: general">
+                        </div>
+                        <div class="form-group" id="ttlFieldGroup" style="display: none;">
+                            <label>有效天數 (TTL)</label>
+                            <input type="number" id="createTTL" placeholder="預設: 7" value="7" min="1">
+                        </div>
+                        <div style="flex: 0 0 auto;">
+                            <button class="btn btn-primary" id="createBtn" onclick="createEntry()" style="height: 46px;">
+                                <span>新增記憶</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="entries-header">
+                    <h3 style="font-size: 1.1rem; display: flex; align-items: center; gap: 8px;"><span id="totalCount">載入中...</span></h3>
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="搜尋記憶..." oninput="filterEntries()">
+                    </div>
+                </div>
+
+                <div id="entriesList" class="entries-list">
+                    <div class="loading"><div class="spinner"></div>資料載入中...</div>
+                </div>
+            </section>
+
+            <!-- ================= MOCK VIEWS FOR OTHER MODULES ================= -->
+            <section id="view-automation" class="view-section">
+                <div class="glass-card">
+                    <div class="card-header"><div class="card-icon">⏱️</div><div class="card-title">排程任務引擎 (Cron & Background Tasks)</div></div>
+                    <div class="card-body">此模組介面尚在開發中。PCAI 目前透過 <code>manager.go</code> 在後台自動處理行事曆同步、早晨簡報與知識備份。</div>
+                </div>
+            </section>
+
+            <section id="view-browser" class="view-section">
+                <div class="glass-card">
+                    <div class="card-header"><div class="card-icon">🌐</div><div class="card-title">瀏覽器自動化助手</div></div>
+                    <div class="card-body">此模組介面尚在開發中。支援 Playwright 架構的 ARIA Snapshot，允許 Agent 自動化導覽網頁與擷取資料。</div>
+                </div>
+            </section>
+
+            <section id="view-skills" class="view-section">
+                <div class="glass-card">
+                    <div class="card-header"><div class="card-icon">🧩</div><div class="card-title">動態技能庫 (Skill Manager)</div></div>
+                    <div class="card-body">此模組介面尚在開發中。可將外部 YAML/Markdown 腳本 (如天氣、系統監控腳本) 掛載為 Agent 的額外技能。</div>
+                </div>
+            </section>
+
+        </main>
     </div>
 
     <!-- Edit Modal -->
     <div class="modal-overlay" id="editModal">
         <div class="modal">
-            <h3>✏️ 編輯記憶</h3>
+            <h3>✏️ 編輯長期記憶</h3>
             <input type="hidden" id="editId">
             <div class="form-group">
                 <label>內容 Content</label>
@@ -712,10 +777,8 @@
     <div class="modal-overlay" id="deleteModal">
         <div class="modal">
             <h3>⚠️ 確認刪除</h3>
-            <p style="color: var(--text-secondary); margin-bottom: 8px;">確定要刪除這筆記憶嗎？此操作無法復原。</p>
-            <p id="deletePreview"
-                style="font-size: 0.85rem; color: var(--text-muted); background: var(--bg-primary); padding: 10px; border-radius: 6px; max-height: 80px; overflow: hidden;">
-            </p>
+            <p style="color: var(--text-secondary); margin-bottom: 12px;">確定要移除這筆記憶資料嗎？這可能會影響 AI 後續的上下文判斷。</p>
+            <p id="deletePreview" style="font-size: 0.9rem; color: var(--text-muted); background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-glass);"></p>
             <input type="hidden" id="deleteId">
             <div class="modal-actions">
                 <button class="btn btn-ghost" onclick="closeDeleteModal()">取消</button>
@@ -724,25 +787,52 @@
         </div>
     </div>
 
-    <!-- Toast -->
+    <!-- Toast Layer -->
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
+        // ================= NAVIGATION LOGIC =================
+        const pageTitles = {
+            'overview': '系統總覽',
+            'memory': '記憶管理 (Memory Manager)',
+            'automation': '排程任務',
+            'browser': '瀏覽器助手',
+            'skills': '動態技能庫'
+        };
+
+        function switchView(viewId) {
+            // Update nav items
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('nav-' + viewId).classList.add('active');
+            
+            // Update page title
+            document.getElementById('pageTitleText').textContent = pageTitles[viewId];
+            
+            // Update sections
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-' + viewId).classList.add('active');
+
+            // If switching to memory, fetch if needed
+            if (viewId === 'memory' && allEntries.length === 0) {
+                fetchEntries();
+            }
+        }
+
+
+        // ================= MEMORY MANAGER LOGIC (From original index.html) =================
         const API_LONG = '/api/memory';
         const API_SHORT = '/api/short-memory';
-        let currentTab = 'long_term'; // 'long_term' or 'short_term'
+        let currentMemTab = 'long_term'; 
         let allEntries = [];
 
-        function switchTab(tabId) {
-            currentTab = tabId;
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
+        function switchMemoryTab(tabId) {
+            currentMemTab = tabId;
+            document.querySelectorAll('.memory-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.memory-tab[data-tab="${tabId}"]`).classList.add('active');
 
-            // 調整搜尋框提示
             document.getElementById('searchInput').value = '';
-            document.getElementById('searchInput').placeholder = tabId === 'short_term' ? '搜尋短期記憶...' : '搜尋長期記憶...';
+            document.getElementById('searchInput').placeholder = tabId === 'short_term' ? '於短期快照中搜尋...' : '於長期向量集中搜尋...';
 
-            // 切換新增表單的預設模式
             document.getElementById('createMode').value = tabId;
             toggleCreateFields();
 
@@ -760,27 +850,33 @@
             }
         }
 
-        // =================== API ===================
         async function fetchEntries() {
-            document.getElementById('entriesList').innerHTML = '<div class="loading"><div class="spinner"></div>載入中...</div>';
-            document.getElementById('totalCount').textContent = `載入中...`;
+            const listEl = document.getElementById('entriesList');
+            const countEl = document.getElementById('totalCount');
+            const overViewCountEl = document.getElementById('overview-memory-count');
+            
+            listEl.innerHTML = '<div class="loading"><div class="spinner"></div>正在與核心同步...</div>';
+            countEl.textContent = `同步中...`;
 
             try {
-                const endpoint = currentTab === 'short_term' ? API_SHORT : API_LONG;
+                const endpoint = currentMemTab === 'short_term' ? API_SHORT : API_LONG;
                 const res = await fetch(endpoint);
                 const data = await res.json();
 
-                if (currentTab === 'short_term') {
+                if (currentMemTab === 'short_term') {
                     allEntries = data.entries || [];
-                    document.getElementById('totalCount').textContent = `共 ${data.count || allEntries.length} 筆短期記憶`;
+                    countEl.innerHTML = `📋 共 <strong style="color:var(--accent-light)">${data.count || allEntries.length}</strong> 筆短期記憶`;
                 } else {
                     allEntries = data.content || data.entries || "尚無記憶資料";
-                    document.getElementById('totalCount').textContent = data.chunks !== undefined ? `共 ${data.chunks} 區塊` : `長期記憶 (最新)`;
+                    const count = data.chunks !== undefined ? data.chunks : (allEntries.length ? allEntries.length : 0);
+                    countEl.innerHTML = `📋 長期記憶資料即時檢視`;
+                    if(overViewCountEl) overViewCountEl.textContent = count;
                 }
 
                 renderEntries(allEntries);
             } catch (e) {
-                showToast('載入失敗: ' + e.message, 'error');
+                showToast('載入通訊失敗: ' + e.message, 'error');
+                listEl.innerHTML = `<div class="empty-state">❌ 無法連接到 PCAI 背景服務</div>`;
             }
         }
 
@@ -788,11 +884,11 @@
             const content = document.getElementById('createContent').value.trim();
             const mode = document.getElementById('createMode').value;
 
-            if (!content) { showToast('請輸入內容', 'error'); return; }
+            if (!content) { showToast('請填寫記憶內容以供學習', 'error'); return; }
 
             const btn = document.getElementById('createBtn');
             btn.disabled = true;
-            btn.innerHTML = '<div class="spinner" style="width:14px;height:14px;border-width:2px;"></div> 處理中...';
+            btn.innerHTML = '<div class="spinner" style="width:16px;height:16px;border-width:2px;border-top-color:white;"></div> 處理中...';
 
             try {
                 if (mode === 'short_term') {
@@ -802,10 +898,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ source: "webui", content: content, ttl_days: ttl })
                     });
-                    if (!res.ok) {
-                        const err = await res.json();
-                        throw new Error(err.error || '新增失敗');
-                    }
+                    if (!res.ok) throw new Error((await res.json()).error || '新增失敗');
                 } else {
                     const category = document.getElementById('createTags').value.trim() || 'general';
                     const res = await fetch(API_LONG, {
@@ -813,39 +906,32 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ content: content, category: category, mode: "long_term" })
                     });
-                    if (!res.ok) {
-                        const err = await res.json();
-                        throw new Error(err.error || '新增失敗');
-                    }
+                    if (!res.ok) throw new Error((await res.json()).error || '分類寫入失敗');
                 }
 
                 document.getElementById('createContent').value = '';
-                showToast('✅ 記憶已新增', 'success');
+                showToast('✅ 資料已進入 PCAI 神經網路', 'success');
 
-                // 如果新增的模式與當前 Tab 一致，則重刷列表
-                if (mode === currentTab) {
-                    fetchEntries();
-                } else {
-                    switchTab(mode);
-                }
+                if (mode === currentMemTab) fetchEntries();
+                else switchMemoryTab(mode);
+
             } catch (e) {
                 showToast(e.message, 'error');
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<span>新增</span>';
+                btn.innerHTML = '<span>新增記憶</span>';
             }
         }
 
         async function updateEntry() {
-            if (currentTab === 'short_term') {
-                showToast('短期記憶不支援修改內容，請刪除後重建', 'error');
-                return;
+            if (currentMemTab === 'short_term') {
+                showToast('短期快照為唯讀紀錄，請刪除後重新輸入', 'error'); return;
             }
 
             const id = document.getElementById('editId').value;
             const content = document.getElementById('editContent').value.trim();
             const tagsStr = document.getElementById('editTags').value.trim();
-            if (!content) { showToast('內容不可為空', 'error'); return; }
+            if (!content) { showToast('內容區塊不得為空', 'error'); return; }
 
             const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
 
@@ -855,12 +941,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content, tags })
                 });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || '更新失敗');
-                }
+                if (!res.ok) throw new Error((await res.json()).error || '刷新失敗');
                 closeModal();
-                showToast('✅ 記憶已更新', 'success');
+                showToast('✅ 記憶鏈結已更新', 'success');
                 fetchEntries();
             } catch (e) {
                 showToast(e.message, 'error');
@@ -870,72 +953,58 @@
         async function confirmDelete() {
             const id = document.getElementById('deleteId').value;
             try {
-                const endpoint = currentTab === 'short_term' ? `${API_SHORT}/delete?id=${id}` : `${API_LONG}/${id}`;
+                const endpoint = currentMemTab === 'short_term' ? `${API_SHORT}/delete?id=${id}` : `${API_LONG}/${id}`;
                 const res = await fetch(endpoint, { method: 'DELETE' });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || '刪除失敗');
-                }
+                if (!res.ok) throw new Error((await res.json()).error || '移除失敗');
                 closeDeleteModal();
-                showToast('✅ 記憶已刪除', 'success');
+                showToast('✅ 指定記憶已清除', 'success');
                 fetchEntries();
             } catch (e) {
                 showToast(e.message, 'error');
             }
         }
 
-        // =================== Render ===================
         function escapeHtml(str) {
             const d = document.createElement('div');
-            d.textContent = str || '';
-            return d.innerHTML;
+            d.textContent = str || ''; return d.innerHTML;
         }
 
         function renderEntries(entries) {
             const list = document.getElementById('entriesList');
-            if (currentTab === 'long_term' && !Array.isArray(entries) && typeof entries === 'string') {
-                // RAG memory fallback render
-                list.innerHTML = `
-                <div class="entry-card">
-                    <div class="entry-content" style="white-space: pre-wrap;">${escapeHtml(entries)}</div>
-                </div>`;
+            if (currentMemTab === 'long_term' && !Array.isArray(entries) && typeof entries === 'string') {
+                list.innerHTML = `<div class="entry-card"><div class="entry-content">${escapeHtml(entries)}</div></div>`;
                 return;
             }
 
             if (!entries || entries.length === 0) {
-                list.innerHTML = `
-            <div class="empty-state">
-                <div class="icon">🫙</div>
-                <p>目前沒有${currentTab === 'short_term' ? '短' : '長'}期記憶資料</p>
-            </div>`;
+                list.innerHTML = `<div class="empty-state"><div class="icon">🌌</div><p>知識庫目前處於真空狀態</p></div>`;
                 return;
             }
 
             list.innerHTML = entries.map((e, idx) => {
-                const needsTruncate = e.content.length > 200;
+                const needsTruncate = e.content.length > 250;
                 const contentClass = needsTruncate ? 'entry-content truncated' : 'entry-content';
 
-                if (currentTab === 'short_term') {
-                    const sourceHtml = `<span class="tag" style="background: rgba(16, 185, 129, 0.1); color: var(--success); border-color: rgba(16, 185, 129, 0.2);"><i style="margin-right:4px;">📥</i>${escapeHtml(e.source)}</span>`;
-                    const expireHtml = `<span class="tag" style="background: rgba(245, 158, 11, 0.1); color: var(--warning); border-color: rgba(245, 158, 11, 0.2);">⏳ 倒數至 ${escapeHtml(e.expires_at)}</span>`;
+                if (currentMemTab === 'short_term') {
+                    const sourceHtml = `<span class="tag" style="background:rgba(16,185,129,0.1);color:var(--success);border-color:rgba(16,185,129,0.2);">📥 ${escapeHtml(e.source)}</span>`;
+                    const expireHtml = `<span class="tag" style="background:rgba(245,158,11,0.1);color:var(--warning);border-color:rgba(245,158,11,0.2);">⏳ 分解於 ${escapeHtml(e.expires_at)}</span>`;
 
                     return `
                     <div class="entry-card">
                         <div class="entry-top">
-                            <span class="entry-id">#${e.id}</span>
+                            <span class="entry-id">NODE #${e.id}</span>
                             <span class="entry-time">${escapeHtml(e.created_at)}</span>
                         </div>
                         <div class="${contentClass}" style="cursor:pointer" data-toggle-truncate>${escapeHtml(e.content)}</div>
                         <div class="entry-bottom">
                             <div class="tags">${sourceHtml}${expireHtml}</div>
                             <div class="actions">
-                                <button class="btn btn-danger btn-sm" data-action="delete" data-index="${idx}">🗑️ 刪除</button>
+                                <button class="btn btn-danger btn-sm" data-action="delete" data-index="${idx}">🗑️</button>
                             </div>
                         </div>
                     </div>`;
                 } else {
-                    // Long term memory render logic (if array structure exists)
-                    const tagsHtml = (e.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
+                    const tagsHtml = (e.tags || []).map(t => `<span class="tag">#${escapeHtml(t)}</span>`).join('');
                     return `
                     <div class="entry-card">
                         <div class="entry-top">
@@ -946,8 +1015,8 @@
                         <div class="entry-bottom">
                             <div class="tags">${tagsHtml}</div>
                             <div class="actions">
-                                <button class="btn btn-edit btn-sm" data-action="edit" data-index="${idx}">✏️ 編輯</button>
-                                <button class="btn btn-danger btn-sm" data-action="delete" data-index="${idx}">🗑️ 刪除</button>
+                                <button class="btn btn-edit btn-sm" data-action="edit" data-index="${idx}">✏️</button>
+                                <button class="btn btn-danger btn-sm" data-action="delete" data-index="${idx}">🗑️</button>
                             </div>
                         </div>
                     </div>`;
@@ -955,54 +1024,41 @@
             }).join('');
         }
 
-        // =================== Event Delegation ===================
+        // Event Listeners
         document.getElementById('entriesList').addEventListener('click', function (e) {
-            // Handle truncate toggle
             const toggleEl = e.target.closest('[data-toggle-truncate]');
-            if (toggleEl) {
-                toggleEl.classList.toggle('truncated');
-                return;
-            }
+            if (toggleEl) { toggleEl.classList.toggle('truncated'); return; }
 
-            // Handle edit/delete buttons
             const btn = e.target.closest('[data-action]');
             if (!btn) return;
 
             const action = btn.dataset.action;
             const index = parseInt(btn.dataset.index, 10);
-
-            // Use the currently displayed entries (could be filtered)
+            
             const searchVal = document.getElementById('searchInput').value.toLowerCase();
             let currentEntries = allEntries;
             if (searchVal) {
                 currentEntries = allEntries.filter(entry =>
                     entry.content.toLowerCase().includes(searchVal) ||
                     (entry.tags || []).some(t => t.toLowerCase().includes(searchVal)) ||
-                    entry.id.toLowerCase().includes(searchVal)
+                    (entry.id && String(entry.id).toLowerCase().includes(searchVal))
                 );
             }
 
             const entry = currentEntries[index];
             if (!entry) return;
 
-            if (action === 'edit') {
-                openEditModal(entry.id, entry.content, (entry.tags || []).join(', '));
-            } else if (action === 'delete') {
-                openDeleteModal(entry.id, entry.content);
-            }
+            if (action === 'edit') openEditModal(entry.id, entry.content, (entry.tags || []).join(', '));
+            else if (action === 'delete') openDeleteModal(entry.id, entry.content);
         });
 
         function filterEntries() {
             const q = document.getElementById('searchInput').value.toLowerCase();
             if (!q) { renderEntries(allEntries); return; }
 
-            // 針對字串回傳的情況(原版長期記憶相容)
-            if (currentTab === 'long_term' && !Array.isArray(allEntries) && typeof allEntries === 'string') {
-                if (allEntries.toLowerCase().includes(q)) {
-                    renderEntries(allEntries);
-                } else {
-                    document.getElementById('entriesList').innerHTML = '<div class="empty-state"><p>無符合的結果</p></div>';
-                }
+            if (currentMemTab === 'long_term' && !Array.isArray(allEntries) && typeof allEntries === 'string') {
+                if (allEntries.toLowerCase().includes(q)) renderEntries(allEntries);
+                else document.getElementById('entriesList').innerHTML = '<div class="empty-state"><p>無吻合脈絡</p></div>';
                 return;
             }
 
@@ -1015,48 +1071,33 @@
             renderEntries(filtered);
         }
 
-        // =================== Modal ===================
         function openEditModal(id, content, tags) {
             document.getElementById('editId').value = id;
             document.getElementById('editContent').value = content;
             document.getElementById('editTags').value = tags;
             document.getElementById('editModal').classList.add('active');
         }
-        function closeModal() {
-            document.getElementById('editModal').classList.remove('active');
-        }
-
+        function closeModal() { document.getElementById('editModal').classList.remove('active'); }
         function openDeleteModal(id, content) {
             document.getElementById('deleteId').value = id;
-            document.getElementById('deletePreview').textContent = content.length > 120 ? content.substring(0, 120) + '...' : content;
+            document.getElementById('deletePreview').textContent = content.length > 80 ? content.substring(0, 80) + '...' : content;
             document.getElementById('deleteModal').classList.add('active');
         }
-        function closeDeleteModal() {
-            document.getElementById('deleteModal').classList.remove('active');
-        }
-
-        // =================== Toast ===================
+        function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('active'); }
         function showToast(msg, type = 'success') {
             const c = document.getElementById('toastContainer');
             const t = document.createElement('div');
-            t.className = `toast ${type}`;
-            t.textContent = msg;
+            t.className = `toast ${type}`; t.textContent = msg;
             c.appendChild(t);
-            setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; }, 2500);
-            setTimeout(() => t.remove(), 3000);
+            setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.4s'; }, 2500);
+            setTimeout(() => t.remove(), 2900);
         }
 
-        // Close modal on overlay click
-        document.getElementById('editModal').addEventListener('click', function (e) {
-            if (e.target === this) closeModal();
-        });
-        document.getElementById('deleteModal').addEventListener('click', function (e) {
-            if (e.target === this) closeDeleteModal();
-        });
+        document.getElementById('editModal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
+        document.getElementById('deleteModal').addEventListener('click', function (e) { if (e.target === this) closeDeleteModal(); });
 
-        // =================== Init ===================
-        fetchEntries();
+        // Initialize App
+        fetchEntries(); // Initial fetch for overview / memory memory state
     </script>
 </body>
-
 </html>

@@ -87,17 +87,19 @@ func (t *BrowserSnapshotTool) Run(argsJSON string) (string, error) {
 	// Default true if not present or handle unmarshal
 	args.InteractiveOnly = true // default
 
-	// Custom unmarshal to handle default?
-	// Actually json unmarshal will set bool to false if missing.
-	// We check map to be sure? map[string]interface{}.
-	// Or just assume: if user wants full page, they explicitly say false.
-	// But bool default is false. We want default true.
-	// Let's parse as map.
+	// Custom unmarshal to handle default and string booleans ("false")
 	var raw map[string]interface{}
 	if err := json.Unmarshal([]byte(argsJSON), &raw); err == nil {
 		if v, ok := raw["interactive_only"]; ok {
-			if b, ok := v.(bool); ok {
-				args.InteractiveOnly = b
+			switch val := v.(type) {
+			case bool:
+				args.InteractiveOnly = val
+			case string:
+				if strings.ToLower(val) == "false" {
+					args.InteractiveOnly = false
+				} else if strings.ToLower(val) == "true" {
+					args.InteractiveOnly = true
+				}
 			}
 		}
 	}
@@ -245,6 +247,43 @@ func (t *BrowserScrollTool) Run(argsJSON string) (string, error) {
 		return "", fmt.Errorf("scroll failed: %v", err)
 	}
 	return fmt.Sprintf("Scrolled %s", args.Direction), nil
+}
+
+// BrowserGetTextTool
+type BrowserGetTextTool struct{}
+
+func (t *BrowserGetTextTool) Name() string { return "browser_get_text" }
+
+func (t *BrowserGetTextTool) Definition() api.Tool {
+	var tool api.Tool
+	jsonStr := `{
+		"type": "function",
+		"function": {
+			"name": "browser_get_text",
+			"description": "獲取整個網頁的純文字內容 (Get full readable text of the page). 適用於只需要讀取文章、匯率或數據，不需要與畫面互動的場景. 必須先執行 browser_open.",
+			"parameters": {
+				"type": "object",
+				"properties": {}
+			}
+		}
+	}`
+	json.Unmarshal([]byte(jsonStr), &tool)
+	return tool
+}
+
+func (t *BrowserGetTextTool) Run(argsJSON string) (string, error) {
+	mgr := browser.GetManager()
+	res, err := mgr.GetFullText()
+	if err != nil {
+		return "", fmt.Errorf("get text failed: %v", err)
+	}
+
+	// 如果內容太長，截斷它以防止超過 LLM 上下文
+	runes := []rune(res)
+	if len(runes) > 10000 {
+		return string(runes[:10000]) + "\n...(文章過長已截斷)...", nil
+	}
+	return res, nil
 }
 
 // BrowserGetTool

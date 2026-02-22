@@ -246,6 +246,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	registry.Register(&browserskill.BrowserTypeTool{})
 	registry.Register(&browserskill.BrowserScrollTool{})
 	registry.Register(&browserskill.BrowserGetTool{})
+	registry.Register(&browserskill.BrowserGetTextTool{})
 
 	// Python Sandbox Tool
 	if pyTool, err := NewPythonSandboxTool(workspacePath, home); err != nil {
