@@ -476,11 +476,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		}
 	})
 
-	// 預設註冊晨間簡報排程 (每天 06:30)
-	// 透過 AddJob 確保持久化到 DB (如果已存在則自動更新)
-	if err := schedMgr.AddJob("daily_morning_briefing", "30 6 * * *", "morning_briefing", "每日 06:30 晨間簡報 (Email+行事曆+天氣)"); err != nil {
-		// 如果已存在，不報錯 (AddJob 使用 ON CONFLICT UPDATE)
-		log.Printf("ℹ️ [Scheduler] morning_briefing job: %v", err)
+	if err := schedMgr.EnsureSystemJob("daily_memory_cleanup", "0 3 * * *", "memory_cleanup", "每日 03:00 清理過期短期記憶"); err != nil {
+		log.Printf("ℹ️ [Scheduler] memory_cleanup job: %v", err)
 	}
 
 	// --- 註冊 memory_cleanup 任務類型 (每天凌晨 3 點清理過期短期記憶) ---
