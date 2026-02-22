@@ -153,12 +153,6 @@ func (r *MemoryReader) LoadBootstrap() (string, error) {
 		return string(data), nil
 	}
 
-	// 向下相容：嘗試 knowledge.md
-	knowledgeMD := filepath.Join(r.mgr.cfg.WorkspaceDir, "knowledge.md")
-	if data, err := os.ReadFile(knowledgeMD); err == nil {
-		return string(data), nil
-	}
-
 	return "", nil
 }
 

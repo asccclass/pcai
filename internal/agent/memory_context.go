@@ -93,8 +93,9 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 						break
 					}
 					content := strings.TrimSpace(res.Chunk.Content)
-					if len(content) > 1500 {
-						content = content[:1500] + "...«已截斷»"
+					runes := []rune(content)
+					if len(runes) > 1500 {
+						content = string(runes[:1500]) + "...«已截斷»"
 					}
 					// 輸出 debug 以了解為何常常被略過
 					fmt.Printf("[Memory Debug] Match %d: FinalScore=%.3f, VectorScore=%.3f, TextScore=%.3f\n", i, res.FinalScore, res.VectorScore, res.TextScore)

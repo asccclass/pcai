@@ -32,7 +32,7 @@ Session 負責儲存當前的對話上下文 (Context Window)，讓 Agent 能夠
 1.  **Manager (`internal/memory/manager.go`)**:
     - **Vector Store**: 維護一個記憶條目 (`Entry`) 的列表。
     - **Embedding**: 使用 Ollama (`mxbai-embed-large`) 將文字轉為向量。
-    - **Persistence**: 存於 `botmemory/knowledge/memory_store.json` (JSON 格式的向量庫)。
+    - **Persistence**: 存於 `botmemory/knowledge/pcai_memory.sqlite` (包含向量與 FTS5 全文索引)。
     - **Search**: 支援 Cosine Similarity + 關鍵字加權混合搜尋。
 
 2.  **Controller (`internal/memory/controller.go`)**:
@@ -48,8 +48,8 @@ Session 負責儲存當前的對話上下文 (Context Window)，讓 Agent 能夠
     - **Extraction**: 定義如何從對話中提取記憶（雖程式碼有框架，目前主要依賴 LLM Tool Use 直接呼叫 `memory_save`）。
 
 ### 儲存位置
-- **向量庫**: `botmemory/knowledge/memory_store.json` (程式讀取用)
-- **可讀日誌**: `botmemory/knowledge/knowledge.md` (人類閱讀用，Markdown 格式)
+- **向量庫與索引**: `botmemory/knowledge/pcai_memory.sqlite` (程式讀取用，向量與 BM25 雙重引擎)
+- **長期記憶日誌**: `botmemory/knowledge/MEMORY.md` (與 `memory/*.md`) (人類閱讀用，核心事實基準，容量無上限)
 - **短期記憶 (SQLite)**: `pcai.db` -> table `short_term_memory` (用於晨間簡報、暫存對話摘要)。
 
 ### 運作流程 (記憶寫入)
@@ -58,7 +58,7 @@ Session 負責儲存當前的對話上下文 (Context Window)，讓 Agent 能夠
 3.  **暫存**: 內容存入 `PendingStore`，回傳 Pending ID。
 4.  **通知**: Agent 告知用戶 "已暫存，請確認"。
 5.  **確認**: 用戶說 "確認" 或呼叫 `memory_confirm`。
-6.  **寫入**: Controller 將內容移入 `Manager` (計算向量並存檔) 並追加到 `knowledge.md`。
+6.  **寫入**: Controller 將內容移入 `Manager` (計算向量並存檔) 並追加到 `MEMORY.md`。
 
 ## 3. 記憶庫與 RAG (檢索增強生成) 機制
 
@@ -96,7 +96,8 @@ Session 負責儲存當前的對話上下文 (Context Window)，讓 Agent 能夠
 - **關連檔案**：`internal/agent/memory_context.go` (函式 `BuildMemorySearchFunc`)
 - **時機**：每次發送提問前，系統都會預先拿你的「問題字詞」作為 Query 去執行 RAG 搜索，然後**混入這次發給 LLM 的隱含 Prompt 中**。
   - **短期記憶快速比對**：若你的問題出現了特定關鍵字（如：`天氣`、`行事曆`、`信件`等），系統會直接從 SQLite 短期資料表抓近 3 筆對應資料。
-  - **長期記憶混合過濾（向量 + 關鍵字 BM25）**：將使用者的問題拿去資料庫做關聯強度比對（Threshold 需超過 `0.05`），最多取回前 3 筆切塊的記憶文字（每筆長度最多 1500 字元）。
+  - **長期記憶混合過濾（向量 + 關鍵字 BM25）**：將使用者的問題拿去資料庫做關聯強度比對（Threshold 需超過 `0.05`），最多取回前 3 筆切塊的記憶文字。
+    - **【容量無上限與 Context 限制說明】**：`MEMORY.md` 檔案本身的內容是**不限字數的（無限容量）**。當存入大量對話時，底層 SQLite 索引會將其切塊 (Chunking)。為避免過長的上下文導致 LLM 迷失重點 (Lost in the Middle) 或超過 Token 限制，系統在擷取「最關聯的 3 筆記憶」發送給 AI 時，**嚴格限制每筆記憶區塊最多擷取 1500 個中文字元 (Runes)**。這樣既能保存無盡過往，又能維持 AI 回答精準度。
 - **注入結果**：一旦搜尋到高度關聯的背景知識，系統會將這段記憶預設為**「【最高優先級警告】這份背景代表實際的生活...你必須絕對無條件信任」**的嚴格前綴指令附加在 Prompt 開頭，確保 AI 根據你的真實背景回答。
 
 #### 2. 全域提示詞附帶 (靜態 System Prompt)
@@ -124,8 +125,8 @@ graph TD
         MemConfirm --> Controller
         
         Controller --> Manager[Memory Manager]
-        Manager <--> VecDB[(memory_store.json)]
-        Manager <--> Markdown[(knowledge.md)]
+        Manager <--> VecDB[(pcai_memory.sqlite)]
+        Manager <--> Markdown[(MEMORY.md)]
     end
     
     subgraph ShortTerm

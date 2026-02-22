@@ -69,8 +69,9 @@ func (se *SearchEngine) Search(ctx context.Context, query string, topK int) (*Me
 		maxChars = 700
 	}
 	for i := range merged {
-		if len(merged[i].Chunk.Content) > maxChars {
-			merged[i].Chunk.Content = merged[i].Chunk.Content[:maxChars] + "…"
+		runes := []rune(merged[i].Chunk.Content)
+		if len(runes) > maxChars {
+			merged[i].Chunk.Content = string(runes[:maxChars]) + "…"
 		}
 	}
 
@@ -187,12 +188,23 @@ func (se *SearchEngine) bm25Search(ctx context.Context, query string, topK int) 
 			continue
 		}
 
-		// BM25 returns negative scores (lower = better), normalize to [0, 1]
+		fmt.Printf("[Trace BM25] Raw Score: %f\n", score)
+
+		// BM25 returns negative scores (lower/more negative = better) in SQLite FTS5 depending on implementation,
+		// but sometimes positive. We take absolute value.
+		// Since these scores can be extremely small (e.g. 1e-5) or large depending on corpus size,
+		// we use a non-linear scaling to map any non-zero score into a reasonable [0,1] range.
 		normalizedScore := math.Abs(score)
-		if normalizedScore > 50 {
-			normalizedScore = 50 // cap
+
+		var textScore float64
+		if normalizedScore > 0 {
+			// e.g. score=0.00001 -> scale up significantly so it's not 0.
+			// a common trick for arbitrary BM25 ranges is score / (score + k)
+			k := 0.00001 // tune this based on the observed avg score
+			textScore = normalizedScore / (normalizedScore + k)
+		} else {
+			textScore = 0
 		}
-		normalizedScore = normalizedScore / 50 // → [0, 1] higher is better
 
 		ut, _ := time.Parse(time.RFC3339, updatedAtStr)
 		results = append(results, SearchResult{
@@ -205,7 +217,7 @@ func (se *SearchEngine) bm25Search(ctx context.Context, query string, topK int) 
 				Tokens:    tokens,
 				UpdatedAt: ut,
 			},
-			TextScore: normalizedScore,
+			TextScore: textScore,
 			Source:    "memory",
 		})
 	}
@@ -272,12 +284,29 @@ func cosineSimilarity(a, b []float32) float64 {
 	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// sanitizeFTS 清理 FTS5 查詢字串，避免語法錯誤
-func sanitizeFTS(query string) string {
-	// 移除特殊字元保留文字
+// cjkSpaced 將字串中的 CJK 字元（漢字、平假名、片假名、韓文）前後補上空白，使其在 SQLite unicode61 下能被獨立切分為 Token
+func cjkSpaced(s string) string {
 	var b strings.Builder
-	words := strings.Fields(query)
-	for i, w := range words {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r) {
+			b.WriteRune(' ')
+			b.WriteRune(r)
+			b.WriteRune(' ')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	// 合併多餘空白
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// sanitizeFTS 清理 FTS5 查詢字串，避免語法錯誤，並處理 CJK 切詞 (Character-level OR fallback)
+func sanitizeFTS(query string) string {
+	var b strings.Builder
+	words := strings.Fields(query) // 保留使用者原始意圖的詞組切分
+	firstToken := true
+
+	for _, w := range words {
 		// 過濾掉純標點的 token
 		clean := strings.Map(func(r rune) rune {
 			if unicode.IsLetter(r) || unicode.IsDigit(r) {
@@ -288,10 +317,37 @@ func sanitizeFTS(query string) string {
 		if clean == "" {
 			continue
 		}
-		if i > 0 && b.Len() > 0 {
-			b.WriteString(" OR ")
+
+		// 將英數字元連續保留 (當作一個 Word OR)，將連續的中文字切開 (當作分開的 Character OR)
+		// 這樣就能適應各種沒有空白斷詞的句子 e.g., "我跟樊秋玲是何時見面的？" -> "我" OR "跟" OR "樊" ...
+		var currentWord strings.Builder
+		for _, r := range clean {
+			isCJK := unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r)
+			if isCJK {
+				if currentWord.Len() > 0 {
+					if !firstToken {
+						b.WriteString(" OR ")
+					}
+					b.WriteString(`"` + currentWord.String() + `"`)
+					currentWord.Reset()
+					firstToken = false
+				}
+				if !firstToken {
+					b.WriteString(" OR ")
+				}
+				b.WriteString(`"` + string(r) + `"`)
+				firstToken = false
+			} else {
+				currentWord.WriteRune(r)
+			}
 		}
-		b.WriteString(`"` + clean + `"`)
+		if currentWord.Len() > 0 {
+			if !firstToken {
+				b.WriteString(" OR ")
+			}
+			b.WriteString(`"` + currentWord.String() + `"`)
+			firstToken = false
+		}
 	}
 	return b.String()
 }
