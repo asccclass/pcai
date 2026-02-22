@@ -140,21 +140,6 @@ func NewManager(brain HeartbeatBrain, db *database.DB) *Manager {
 		m.runHeartbeat()
 	})
 
-	// 新增任務：每天早上 07:00 執行晨間簡報
-	// Cron 格式: "分 時 日 月 週"
-	_, err := m.cron.AddFunc("0 7 * * *", func() {
-		fmt.Println("✅[Scheduler] 正在產生晨間簡報...")
-		ctx := context.Background()
-		// 呼叫我們之前實作的簡報功能
-		err := m.brain.GenerateMorningBriefing(ctx)
-		if err != nil {
-			fmt.Printf("⚠️ [Scheduler] 晨間簡報執行失敗: %v\n", err)
-		}
-	})
-
-	if err != nil {
-		fmt.Printf("⚠️ [Scheduler] 註冊簡報任務失敗: %v\n", err)
-	}
 	// m.startWorkers()
 
 	return m
@@ -239,7 +224,22 @@ func (m *Manager) LoadJobs() error {
 		return err
 	}
 
+	// 記錄已經載入的 TaskType，用來檢查 DB 中是否有重複類型的任務
+	loadedTypes := make(map[string]string) // map[TaskType]JobName
+
 	for _, job := range jobs {
+		// 檢查資料庫是否有重複類型的任務
+		if existingName, exists := loadedTypes[job.TaskType]; exists {
+			log.Printf("⚠️ [Scheduler] 發現重複的任務類型 '%s' (已載入: '%s', 欲載入: '%s')，準備從資料庫移除後者...", job.TaskType, existingName, job.Name)
+			// 從資料庫中移除重複的記錄，保留先讀到的一筆
+			if err := m.db.RemoveCronJob(ctx, job.Name); err != nil {
+				log.Printf("⚠️ [Scheduler] 移除資料庫中重複任務 '%s' 失敗: %v", job.Name, err)
+			} else {
+				log.Printf("✅ [Scheduler] 已從資料庫移除重複任務: %s", job.Name)
+			}
+			continue
+		}
+
 		// 檢查任務類型是否已註冊
 		m.mu.RLock()
 		fn, ok := m.registry[job.TaskType]
@@ -249,6 +249,16 @@ func (m *Manager) LoadJobs() error {
 			log.Printf("⚠️ [Scheduler] Warning: Task type '%s' not registered for job '%s'. Skipping.", job.TaskType, job.Name)
 			continue
 		}
+
+		// 標記該類型已載入
+		loadedTypes[job.TaskType] = job.Name
+
+		// 避免重複註冊：如果記憶體中已存在該任務，先從 Cron 引擎中移除舊的
+		m.mu.Lock()
+		if oldJob, exists := m.jobs[job.Name]; exists {
+			m.cron.Remove(oldJob.EntryID)
+		}
+		m.mu.Unlock()
 
 		// 加入 Cron
 		id, err := m.cron.AddFunc(job.CronSpec, fn)
@@ -294,11 +304,7 @@ func (m *Manager) AddJob(name, spec, taskType, desc string) error {
 	// 3. 加入新的 Cron Entry
 	id, err := m.cron.AddFunc(spec, fn)
 	if err != nil {
-		// 回滾 DB (這裡簡化，不刪除 DB，但這會導致資料不一致，實務上應更嚴謹)
-		// 如果 Cron 格式錯誤，DB 已經存了，下次啟動也會錯誤。
-		// 更好的做法是先驗證 Spec，再存 DB。
-		// 但 Cron 庫驗證 Spec 比較麻煩，這裡我們假設 Spec 在前端或業務層已驗證，或接受這種短暫不一致。
-		// 為求穩健，這裡嘗試刪除 DB entry
+		// 回滾 DB
 		_ = m.db.RemoveCronJob(context.Background(), name)
 		return fmt.Errorf("Cron 格式錯誤 (%s): %v", spec, err)
 	}
@@ -311,6 +317,29 @@ func (m *Manager) AddJob(name, spec, taskType, desc string) error {
 	}
 	fmt.Printf("[Scheduler] Cron Job Added: %s (%s)\n", name, spec)
 	return nil
+}
+
+// EnsureSystemJob 確保系統預設任務存在，如果資料庫中已經有該類型的任務，則不重複新增 (避免多筆)
+func (m *Manager) EnsureSystemJob(name, spec, taskType, desc string) error {
+	// 檢查資料庫是否已經有同類型的任務
+	ctx := context.Background()
+	jobs, err := m.db.GetCronJobs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get existing jobs: %w", err)
+	}
+
+	// 檢查是否有同類型 (TaskType) 的任務。如果有同類型的，表示使用者或系統已經設定過，不再強制寫入新紀錄
+	for _, job := range jobs {
+		if job.TaskType == taskType {
+			// 如果名稱不同，但類型相同，為避免重疊執行，我們視為已設定。
+			// 如果名稱也相同，且 Spec 不同，我們以資料庫為準（不覆蓋）。
+			return nil
+		}
+	}
+
+	// 若完全沒有該類型的任務，則作為預設值加入
+	log.Printf("ℹ️ [Scheduler] 初始化預設系統排程: %s (%s)", name, spec)
+	return m.AddJob(name, spec, taskType, desc)
 }
 
 // RemoveJob 移除排程任務
