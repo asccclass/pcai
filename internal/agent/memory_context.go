@@ -45,8 +45,23 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 		var sb strings.Builder
 		foundAny := false
 
+		// 避免將明確的系統指令或工具操作指令誤認為在查詢個人歷史
+		isSystemCommand := false
+		systemCmdKeywords := []string{"幫我用瀏覽器", "幫我用", "請幫我打開", "請幫我", "列出檔案", "執行指令", "幫我讀取", "幫我搜尋", "讀取", "搜尋"}
+
+		// 移除開頭常見的引號、括號等標點符號，以避免 HasPrefix 失效
+		cleanedQuery := strings.TrimLeft(query, " 「」\"'【】[ ]")
+		cleanedLower := strings.ToLower(cleanedQuery)
+
+		for _, kw := range systemCmdKeywords {
+			if strings.HasPrefix(cleanedLower, kw) || strings.HasPrefix(cleanedQuery, kw) {
+				isSystemCommand = true
+				break
+			}
+		}
+
 		// 1. 短期記憶搜尋 (SQLite)
-		if db != nil {
+		if db != nil && !isSystemCommand {
 			source := ""
 			for _, mapping := range memorySourceMap {
 				for _, kw := range mapping.InputKeywords {
@@ -78,21 +93,6 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 		}
 
 		// 2. 長期記憶混合搜尋 (BM25 + Vector Semantic Search)
-		// 避免將明確的系統指令或工具操作指令誤認為在查詢個人歷史
-		isSystemCommand := false
-		systemCmdKeywords := []string{"幫我用瀏覽器", "幫我用", "請幫我打開", "請幫我", "列出檔案", "執行指令", "幫我讀取", "幫我搜尋"}
-
-		// 移除開頭常見的引號、括號等標點符號，以避免 HasPrefix 失效
-		cleanedQuery := strings.TrimLeft(query, " 「」\"'【】[ ]")
-		cleanedLower := strings.ToLower(cleanedQuery)
-
-		for _, kw := range systemCmdKeywords {
-			if strings.HasPrefix(cleanedLower, kw) || strings.HasPrefix(cleanedQuery, kw) {
-				isSystemCommand = true
-				break
-			}
-		}
-
 		if tk != nil && len(strings.TrimSpace(query)) > 0 && !isSystemCommand {
 			resp, err := tk.MemorySearch(ctx, query)
 			if err == nil && len(resp.Results) > 0 {

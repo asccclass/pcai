@@ -19,6 +19,9 @@ type AgentTool interface {
 
 	// Run 接收 JSON 格式的參數字串，並回傳執行結果
 	Run(argsJSON string) (string, error)
+
+	// IsSkill 判斷這個工具是否為使用者自定義的技能 (通常透過 Markdown 定義)
+	IsSkill() bool
 }
 
 // toolEntry 包裝工具和其優先級
@@ -65,6 +68,30 @@ func (r *Registry) GetDefinitions() []api.Tool {
 	defs := make([]api.Tool, 0, len(sorted))
 	for _, e := range sorted {
 		defs = append(defs, e.tool.Definition())
+	}
+	return defs
+}
+
+// GetSkillDefinitions 只取得標記為 Skill 的工具定義
+func (r *Registry) GetSkillDefinitions() []api.Tool {
+	sorted := r.sortedEntries()
+	defs := make([]api.Tool, 0)
+	for _, e := range sorted {
+		if e.tool.IsSkill() {
+			defs = append(defs, e.tool.Definition())
+		}
+	}
+	return defs
+}
+
+// GetBaseToolDefinitions 只取得非 Skill 的基礎工具定義
+func (r *Registry) GetBaseToolDefinitions() []api.Tool {
+	sorted := r.sortedEntries()
+	defs := make([]api.Tool, 0)
+	for _, e := range sorted {
+		if !e.tool.IsSkill() {
+			defs = append(defs, e.tool.Definition())
+		}
 	}
 	return defs
 }

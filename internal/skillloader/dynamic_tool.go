@@ -234,6 +234,10 @@ func (t *DynamicTool) Name() string {
 	return strings.ToLower(strings.ReplaceAll(t.Def.Name, " ", "_"))
 }
 
+func (t *DynamicTool) IsSkill() bool {
+	return true
+}
+
 func (t *DynamicTool) Definition() api.Tool {
 	// 重新建構 Properties map
 	propsMap := make(map[string]interface{})

@@ -30,7 +30,11 @@ var toolHintRules = []toolHintRule{
 		Keywords: []string{"郵件", "信件", "信箱", "email", "mail", "gmail"},
 		ToolName: "read_email",
 		HintFunc: func(input, pendingID string) string {
-			return "[SYSTEM INSTRUCTION] 使用者要求讀取郵件。你必須呼叫 read_email 工具。嚴禁使用 google_search、google_services 或 manage_cron_job。"
+			return `[SYSTEM INSTRUCTION] 使用者要求讀取或搜尋郵件。你必須呼叫 read_email 工具。
+嚴禁使用 google_search、google_services、manage_cron_job 或編造 gog 指令。
+呼叫工具的嚴格格式要求：
+- 你必須使用標準 JSON 格式呼叫，範例：{"name": "read_email", "parameters": {"query": "is:inbox", "limit": "5"}}
+- 工具必須包含 query (可用 is:inbox 或搜尋關鍵字) 與 limit (例如 "5" 或 "10")。`
 		},
 	},
 	{
