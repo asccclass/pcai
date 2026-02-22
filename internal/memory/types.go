@@ -284,6 +284,7 @@ func (m *Manager) initDB() error {
 		start_line  INTEGER NOT NULL,
 		end_line    INTEGER NOT NULL,
 		content     TEXT NOT NULL,
+		search_content TEXT NOT NULL,
 		tokens      INTEGER NOT NULL,
 		updated_at  DATETIME NOT NULL,
 		file_hash   TEXT NOT NULL
@@ -334,14 +335,14 @@ func (m *Manager) initDB() error {
 	// FTS 同步觸發器
 	triggers := `
 	CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
-		INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+		INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.search_content);
 	END;
 	CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
-		INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+		INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES('delete', old.rowid, old.search_content);
 	END;
 	CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
-		INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-		INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+		INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES('delete', old.rowid, old.search_content);
+		INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.search_content);
 	END;
 	`
 	if _, err := db.Exec(triggers); err != nil {

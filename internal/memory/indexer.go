@@ -185,8 +185,8 @@ func (idx *Indexer) IndexFile(ctx context.Context, filePath string) error {
 	defer tx.Rollback()
 
 	stmtChunk, err := tx.PrepareContext(ctx,
-		`INSERT OR REPLACE INTO chunks (id, file_path, start_line, end_line, content, tokens, updated_at, file_hash)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		`INSERT OR REPLACE INTO chunks (id, file_path, start_line, end_line, content, search_content, tokens, updated_at, file_hash)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (idx *Indexer) IndexFile(ctx context.Context, filePath string) error {
 	for _, c := range chunks {
 		if _, err := stmtChunk.ExecContext(ctx,
 			c.ID, c.FilePath, c.StartLine, c.EndLine,
-			c.Content, c.Tokens, c.UpdatedAt.Format(time.RFC3339), hash,
+			c.Content, cjkSpaced(c.Content), c.Tokens, c.UpdatedAt.Format(time.RFC3339), hash,
 		); err != nil {
 			return err
 		}
@@ -245,14 +245,6 @@ func (idx *Indexer) IndexAll(ctx context.Context) error {
 	if _, err := os.Stat(memoryMD); err == nil {
 		if err := idx.IndexFile(ctx, memoryMD); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠️ [Memory] 索引 MEMORY.md 失敗: %v\n", err)
-		}
-	}
-
-	// knowledge.md (向下相容)
-	knowledgeMD := filepath.Join(workDir, "knowledge.md")
-	if _, err := os.Stat(knowledgeMD); err == nil {
-		if err := idx.IndexFile(ctx, knowledgeMD); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️ [Memory] 索引 knowledge.md 失敗: %v\n", err)
 		}
 	}
 
