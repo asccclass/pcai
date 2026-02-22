@@ -8,7 +8,10 @@ credentials.json
 token.json
 envfile
 user_workspace/*
-botmemory/*
+botmemory/backup/*
+botmemory/self_test_reports/*
+botmemory/whatsapp-*
+botmemory/history/*
 sandbox/*
 temp_*
 skills/skills_snapshot.md
