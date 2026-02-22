@@ -45,7 +45,7 @@ type CalendarWatcherSkill struct {
 func NewCalendarWatcherSkill(tgToken, tgChatID string) *CalendarWatcherSkill {
 	home, _ := os.Getwd()
 	stateFile := filepath.Join(home, "botmemory", "calendar_state.json")
-	knowledgePath := filepath.Join(home, "botmemory", "knowledge", "knowledge.md")
+	knowledgePath := filepath.Join(home, "botmemory", "knowledge", "MEMORY.md")
 	eventsPath := filepath.Join(home, "botmemory", "knowledge", "events.md")
 
 	// 尋找 gog 執行檔
