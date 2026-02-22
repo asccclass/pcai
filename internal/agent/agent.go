@@ -142,9 +142,8 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		if len(aiMsg.ToolCalls) == 0 {
 			content := strings.TrimSpace(aiMsg.Content)
 
-			// 尋找所有的 JSON blocks
-			jsonRe := regexp.MustCompile(`(?s)\{[\s\S]*?\}`)
-			matches := jsonRe.FindAllString(content, -1)
+			// 尋找所有的 JSON blocks (替換為大括號計數邏輯，支援巢狀 JSON)
+			matches := extractJSONBlocks(content)
 
 			parsedCount := 0
 			for _, jsonStr := range matches {
@@ -594,4 +593,29 @@ func toolNameToMemorySource(toolName string) string {
 		return source
 	}
 	return ""
+}
+
+// extractJSONBlocks 透過計算大括號的數量，精確提取巢狀的 JSON 區塊
+func extractJSONBlocks(text string) []string {
+	var blocks []string
+	startIdx := -1
+	braceCount := 0
+
+	for i, r := range text {
+		if r == '{' {
+			if braceCount == 0 {
+				startIdx = i
+			}
+			braceCount++
+		} else if r == '}' {
+			braceCount--
+			if braceCount == 0 && startIdx != -1 {
+				blocks = append(blocks, text[startIdx:i+1])
+				startIdx = -1
+			} else if braceCount < 0 {
+				braceCount = 0 // Ignore unmatched closing braces
+			}
+		}
+	}
+	return blocks
 }
