@@ -78,7 +78,22 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 		}
 
 		// 2. 長期記憶混合搜尋 (BM25 + Vector Semantic Search)
-		if tk != nil && len(strings.TrimSpace(query)) > 0 {
+		// 避免將明確的系統指令或工具操作指令誤認為在查詢個人歷史
+		isSystemCommand := false
+		systemCmdKeywords := []string{"幫我用瀏覽器", "幫我用", "請幫我打開", "請幫我", "列出檔案", "執行指令", "幫我讀取", "幫我搜尋"}
+
+		// 移除開頭常見的引號、括號等標點符號，以避免 HasPrefix 失效
+		cleanedQuery := strings.TrimLeft(query, " 「」\"'【】[ ]")
+		cleanedLower := strings.ToLower(cleanedQuery)
+
+		for _, kw := range systemCmdKeywords {
+			if strings.HasPrefix(cleanedLower, kw) || strings.HasPrefix(cleanedQuery, kw) {
+				isSystemCommand = true
+				break
+			}
+		}
+
+		if tk != nil && len(strings.TrimSpace(query)) > 0 && !isSystemCommand {
 			resp, err := tk.MemorySearch(ctx, query)
 			if err == nil && len(resp.Results) > 0 {
 				if !foundAny {
@@ -86,7 +101,6 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 				} else {
 					sb.WriteString("【長期深度記憶】\n")
 				}
-				foundAny = true
 
 				for i, res := range resp.Results {
 					if i >= 3 { // 最多取前 3 筆避免塞爆 prompt
@@ -100,11 +114,13 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 					// 輸出 debug 以了解為何常常被略過
 					fmt.Printf("[Memory Debug] Match %d: FinalScore=%.3f, VectorScore=%.3f, TextScore=%.3f\n", i, res.FinalScore, res.VectorScore, res.TextScore)
 
-					// 稍微調降閾值，以適應短句搜查
-					if res.FinalScore > 0.05 || res.TextScore > 0.05 {
+					// 調高閾值，避免過度匹配無關指令 (原本是 > 0.05)
+					// 若文字匹配很低但向量匹配很高，通常是語義漂移（如 browser vs someone's name in embedding space）
+					if (res.FinalScore > 0.4 && res.TextScore > 0.1) || res.TextScore > 0.5 {
 						sb.WriteString(fmt.Sprintf("\n--- 背景知識 %d ---\n%s\n", i+1, content))
+						foundAny = true
 					} else {
-						fmt.Printf("[Memory Debug] Match %d dropped due to low score.\n", i)
+						fmt.Printf("[Memory Debug] Match %d dropped due to low confidence.\n", i)
 					}
 				}
 			}

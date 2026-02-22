@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -316,6 +317,68 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			}
 		}
 
+		// [FIX] 補救措施 2.6：處理裸工具名稱 + key="value" 的常見格式
+		// Llama 有時會輸出 browser_open url="https://..." 格式
+		if len(aiMsg.ToolCalls) == 0 {
+			content := strings.TrimSpace(aiMsg.Content)
+			// 匹配 tool_name key="value" key2="value2" 格式 (確保不在引號或括號內)
+			nakedRe := regexp.MustCompile(`^([\w_]+)\s+((?:\w+\s*=\s*(?:"[^"]*"|'[^']*'|\S+)\s*)+)$`)
+
+			// 為了處理可能前面有一些空行或提示詞，先切出最後一行來檢查
+			lines := strings.Split(content, "\n")
+			for i := len(lines) - 1; i >= 0; i-- {
+				line := strings.TrimSpace(lines[i])
+				if m := nakedRe.FindStringSubmatch(line); m != nil && len(m) == 3 {
+					funcName := m[1]
+					argsStr := m[2]
+
+					// 確保是真的工具名稱
+					isValidTool := false
+					for _, d := range toolDefs {
+						if d.Function.Name == funcName {
+							isValidTool = true
+							break
+						}
+					}
+
+					if isValidTool {
+						fmt.Printf("🔍 [Agent] 偵測到裸參數風格工具呼叫: %s %s\n", funcName, argsStr)
+
+						argsMap := make(map[string]interface{})
+						argRe := regexp.MustCompile(`(\w+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))`)
+						for _, am := range argRe.FindAllStringSubmatch(argsStr, -1) {
+							key := am[1]
+							val := am[2] // double-quoted
+							if val == "" {
+								val = am[3] // single-quoted
+							}
+							if val == "" {
+								val = am[4] // unquoted
+							}
+							argsMap[key] = val
+						}
+
+						argsBytes, _ := json.Marshal(argsMap)
+						var finalArgs api.ToolCallFunctionArguments
+						_ = json.Unmarshal(argsBytes, &finalArgs)
+
+						aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+							Function: api.ToolCallFunction{
+								Name:      funcName,
+								Arguments: finalArgs,
+							},
+						})
+
+						// 移除工具呼叫那一行，保留前面的說話內容
+						lines[i] = ""
+						aiMsg.Content = strings.Join(lines, "\n")
+						finalResponse = aiMsg.Content
+						break
+					}
+				}
+			}
+		}
+
 		// [FIX] 補救措施 3：處理自然語言描述 + 非標準參數的模式
 		// 支援的格式:
 		//   (a) 裸 JSON 參數: "我會呼叫 get_taiwan_weather... { "location": "苗栗縣" }"
@@ -499,16 +562,22 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 				toolFeedback = fmt.Sprintf("【執行失敗】：%v", toolErr)
 				// [NEW] 攔截幻覺 (Hallucination) 並記錄
 				if strings.Contains(toolErr.Error(), "找不到工具") {
-					toolFeedback = fmt.Sprintf("【系統回饋】：您嘗試呼叫的工具 '%s' 不存在或無權限。\n\n"+
-						"⚠️ **觸發「自我演化協議」(Self-Evolution Protocol)** ⚠️\n"+
-						"系統偵測到您試圖使用尚未實作的能力。請按照以下步驟自主創建此工具：\n"+
-						"1. **分析需求**: 判斷此功能是否可透過 OS 指令 (如 bash, powershell) 或簡單腳本達成。\n"+
-						"2. **測試解決方案**: 使用 `shell_exec` 嘗試執行相關指令，確認輸出符合預期。\n"+
-						"3. **創建技能骨架**: 使用 `skill_scaffold` 建立新技能目錄 (例如: `skill_scaffold(name=\"%s\", ...)` )。\n"+
-						"4. **實作與寫入**: 使用 `fs_write_file` 將測試成功的指令或腳本寫入 `SKILL.md` 或對應檔案。\n"+
-						"5. **註冊技能**: 使用 `reload_skills` 載入新技能。\n"+
-						"6. **最終執行**: 再次呼叫新創建的工具 `%s` 來完成原始任務。\n\n"+
-						"或者，你可以直接呼叫 `generate_skill(goal='...')` 讓我為你自動生成此技能！", tc.Function.Name, tc.Function.Name, tc.Function.Name)
+					// 根據環境變數決定是否啟用自動創建技能的提示
+					enableAutoSkill := os.Getenv("ENABLE_AUTO_SKILL_CREATION")
+					if enableAutoSkill == "false" {
+						toolFeedback = fmt.Sprintf("【系統回饋】：您嘗試呼叫的工具 '%s' 不存在或無權限。系統管理員已停用自動建立技能的功能，請停止嘗試使用不存在的工具。", tc.Function.Name)
+					} else {
+						toolFeedback = fmt.Sprintf("【系統回饋】：您嘗試呼叫的工具 '%s' 不存在或無權限。\n\n"+
+							"⚠️ **觸發「自我演化協議」(Self-Evolution Protocol)** ⚠️\n"+
+							"系統偵測到您試圖使用尚未實作的能力。請按照以下步驟自主創建此工具：\n"+
+							"1. **分析需求**: 判斷此功能是否可透過 OS 指令 (如 bash, powershell) 或簡單腳本達成。\n"+
+							"2. **測試解決方案**: 使用 `shell_exec` 嘗試執行相關指令，確認輸出符合預期。\n"+
+							"3. **創建技能骨架**: 使用 `skill_scaffold` 建立新技能目錄 (例如: `skill_scaffold(name=\"%s\", ...)` )。\n"+
+							"4. **實作與寫入**: 使用 `fs_write_file` 將測試成功的指令或腳本寫入 `SKILL.md` 或對應檔案。\n"+
+							"5. **註冊技能**: 使用 `reload_skills` 載入新技能。\n"+
+							"6. **最終執行**: 再次呼叫新創建的工具 `%s` 來完成原始任務。\n\n"+
+							"或者，你可以直接呼叫 `generate_skill(goal='...')` 讓我為你自動生成此技能！", tc.Function.Name, tc.Function.Name, tc.Function.Name)
+					}
 
 					// 為了符合 Clean Architecture，這裡只呼叫 Logger 的介面
 					// 若 Logger 有實作 LogHallucination 則會被呼叫
@@ -535,6 +604,12 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 					if tc.Function.Name == "list_tasks" && strings.Contains(result, "沒有任何背景任務") {
 						// 讓 AI 知道現在是空的，讓它發揮創意回答
 						result = "【系統資訊】：當前背景任務清單為空。請以助理身份告知使用者你目前正待命中。"
+					} else if tc.Function.Name == "browser_get_text" {
+						toolFeedback = fmt.Sprintf("【網頁內容擷取成功】:\n%s\n\n"+
+							"=========================================\n"+
+							"⚠️【SYSTEM CRITICAL INSTRUCTION】⚠️\n"+
+							"使用者原先的提問是：「%s」\n\n"+
+							"請【立刻且僅針對】上述提問，從網頁內容中萃取答案並回覆。絕對禁止列出網頁中其他無關的項目（例如使用者只問了特定貨幣，就絕對不要列出其他國家的貨幣）。", result, input)
 					} else {
 						toolFeedback = fmt.Sprintf("【SYSTEM】: %s", result)
 					}

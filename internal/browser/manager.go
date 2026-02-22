@@ -139,6 +139,11 @@ func (m *BrowserManager) Snapshot(interactiveOnly bool) (string, error) {
 			playwright.AriaRoleHeading,
 			playwright.AriaRoleListitem,
 			playwright.AriaRoleArticle,
+			playwright.AriaRoleTable,
+			playwright.AriaRoleRow,
+			playwright.AriaRoleCell,
+			playwright.AriaRoleParagraph,
+			playwright.AriaRoleGeneric, // captures standard div/span with text
 		)
 	}
 
@@ -287,6 +292,26 @@ func (m *BrowserManager) GetText(ref string) (string, error) {
 
 	// Return InnerText to strip HTML tags
 	return loc.InnerText()
+}
+
+// GetFullText extracts the entire readable text from the body
+func (m *BrowserManager) GetFullText() (string, error) {
+	if err := m.EnsureContext(); err != nil {
+		return "", err
+	}
+
+	// 嘗試取得 body 的 innerText，這通常是去除了 script/style 且可見的純文字
+	val, err := m.page.Evaluate("document.body.innerText")
+	if err != nil {
+		return "", fmt.Errorf("failed to evaluate text: %v", err)
+	}
+
+	strVal, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("evaluated result is not a string")
+	}
+
+	return strings.TrimSpace(strVal), nil
 }
 
 // cleanUp gracefully tears down Playwright instances

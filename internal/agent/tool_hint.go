@@ -63,6 +63,21 @@ var toolHintRules = []toolHintRule{
 		},
 	},
 	{
+		Keywords: []string{"瀏覽器", "網頁", "網址", "打開網址", "讀取網頁", "browser", "url"},
+		ToolName: "browser_open",
+		HintFunc: func(input, pendingID string) string {
+			return `[SYSTEM INSTRUCTION] 使用者要求使用瀏覽器讀取網頁內容或互動。
+執行步驟：
+1. 呼叫 {"name": "browser_open", "arguments": {"url": "https://..."}}。
+2. 根據你的目的選擇下一步：
+   - 若目的只是「讀取/尋找純粹的資訊」(如報價、匯率、文章)，請直接呼叫 {"name": "browser_get_text", "arguments": {}} 取得整個網頁的純文字內容。
+   - 若你需要「點擊按鈕、輸入文字、導航」等互動，請呼叫 {"name": "browser_snapshot", "arguments": {"interactive_only": true}} 以取得可互動元素的參考 ID (ref)。
+   
+⚠️【最重要警告】：當你取得網頁內容後，請「精準回答使用者所詢問的對象」（例如使用者問南非幣，就只回答南非幣），絕對不要把網頁上所有不相關的項目（如其他國家的匯率或無關資訊）全部列出來。
+⚠️【重要格式規範】：你必須使用標準 JSON 格式包裹參數，嚴禁單獨輸出純文字指令！`
+		},
+	},
+	{
 		Keywords: []string{"列出檔案", "目錄", "list files", "ls", "dir", "列出"},
 		ToolName: "fs_list_dir",
 		HintFunc: func(input, pendingID string) string {
