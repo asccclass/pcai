@@ -39,6 +39,10 @@ func (t *PlannerTool) Name() string {
 	return "task_planner"
 }
 
+func (t *PlannerTool) IsSkill() bool {
+	return false
+}
+
 func (t *PlannerTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

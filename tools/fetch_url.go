@@ -14,6 +14,10 @@ type WebFetchTool struct{}
 
 func (t *WebFetchTool) Name() string { return "web_fetch" }
 
+func (t *WebFetchTool) IsSkill() bool {
+	return false
+}
+
 func (t *WebFetchTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

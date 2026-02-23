@@ -24,6 +24,10 @@ func (t *MemoryTool) Name() string {
 	return "memory_search"
 }
 
+func (t *MemoryTool) IsSkill() bool {
+	return false
+}
+
 func (t *MemoryTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

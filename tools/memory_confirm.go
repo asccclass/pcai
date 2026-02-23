@@ -27,6 +27,10 @@ func (t *MemoryConfirmTool) Name() string {
 	return "memory_confirm"
 }
 
+func (t *MemoryConfirmTool) IsSkill() bool {
+	return false
+}
+
 func (t *MemoryConfirmTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

@@ -12,7 +12,8 @@ import (
 // BrowserOpenTool
 type BrowserOpenTool struct{}
 
-func (t *BrowserOpenTool) Name() string { return "browser_open" }
+func (t *BrowserOpenTool) Name() string  { return "browser_open" }
+func (t *BrowserOpenTool) IsSkill() bool { return false }
 
 func (t *BrowserOpenTool) Definition() api.Tool {
 	var tool api.Tool
@@ -56,7 +57,8 @@ func (t *BrowserOpenTool) Run(argsJSON string) (string, error) {
 // BrowserSnapshotTool
 type BrowserSnapshotTool struct{}
 
-func (t *BrowserSnapshotTool) Name() string { return "browser_snapshot" }
+func (t *BrowserSnapshotTool) Name() string  { return "browser_snapshot" }
+func (t *BrowserSnapshotTool) IsSkill() bool { return false }
 
 func (t *BrowserSnapshotTool) Definition() api.Tool {
 	var tool api.Tool
@@ -115,7 +117,8 @@ func (t *BrowserSnapshotTool) Run(argsJSON string) (string, error) {
 // BrowserClickTool
 type BrowserClickTool struct{}
 
-func (t *BrowserClickTool) Name() string { return "browser_click" }
+func (t *BrowserClickTool) Name() string  { return "browser_click" }
+func (t *BrowserClickTool) IsSkill() bool { return false }
 
 func (t *BrowserClickTool) Definition() api.Tool {
 	var tool api.Tool
@@ -161,7 +164,8 @@ func (t *BrowserClickTool) Run(argsJSON string) (string, error) {
 // BrowserTypeTool
 type BrowserTypeTool struct{}
 
-func (t *BrowserTypeTool) Name() string { return "browser_type" }
+func (t *BrowserTypeTool) Name() string  { return "browser_type" }
+func (t *BrowserTypeTool) IsSkill() bool { return false }
 
 func (t *BrowserTypeTool) Definition() api.Tool {
 	var tool api.Tool
@@ -209,7 +213,8 @@ func (t *BrowserTypeTool) Run(argsJSON string) (string, error) {
 // BrowserScrollTool
 type BrowserScrollTool struct{}
 
-func (t *BrowserScrollTool) Name() string { return "browser_scroll" }
+func (t *BrowserScrollTool) Name() string  { return "browser_scroll" }
+func (t *BrowserScrollTool) IsSkill() bool { return false }
 
 func (t *BrowserScrollTool) Definition() api.Tool {
 	var tool api.Tool
@@ -252,7 +257,8 @@ func (t *BrowserScrollTool) Run(argsJSON string) (string, error) {
 // BrowserGetTextTool
 type BrowserGetTextTool struct{}
 
-func (t *BrowserGetTextTool) Name() string { return "browser_get_text" }
+func (t *BrowserGetTextTool) Name() string  { return "browser_get_text" }
+func (t *BrowserGetTextTool) IsSkill() bool { return false }
 
 func (t *BrowserGetTextTool) Definition() api.Tool {
 	var tool api.Tool
@@ -289,7 +295,8 @@ func (t *BrowserGetTextTool) Run(argsJSON string) (string, error) {
 // BrowserGetTool
 type BrowserGetTool struct{}
 
-func (t *BrowserGetTool) Name() string { return "browser_get" }
+func (t *BrowserGetTool) Name() string  { return "browser_get" }
+func (t *BrowserGetTool) IsSkill() bool { return false }
 
 func (t *BrowserGetTool) Definition() api.Tool {
 	var tool api.Tool

@@ -23,6 +23,10 @@ func (t *MemorySaveTool) Name() string {
 	return "memory_save"
 }
 
+func (t *MemorySaveTool) IsSkill() bool {
+	return false
+}
+
 func (t *MemorySaveTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

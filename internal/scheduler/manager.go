@@ -20,7 +20,7 @@ type HeartbeatBrain interface {
 	// Think 根據快照做出判斷，回傳決策結果（IDLE, LOGGED, 或 Tool Call）
 	Think(ctx context.Context, snapshot string) (string, error)
 	// ExecuteDecision 執行 Think 產生的結果
-	ExecuteDecision(ctx context.Context, decision string) error
+	ExecuteDecision(ctx context.Context, decision string, snapshot string) error
 	// GenerateMorningBriefing 讓 Scheduler 知道大腦具備產生簡報的能力
 	GenerateMorningBriefing(ctx context.Context) error
 	// RunPatrol 執行閒置時的背景巡邏
@@ -110,7 +110,7 @@ func (m *Manager) runHeartbeat() {
 		return
 	}
 
-	err = m.brain.ExecuteDecision(ctx, decision)
+	err = m.brain.ExecuteDecision(ctx, decision, snapshot)
 	if err != nil {
 		fmt.Printf("[Scheduler] Heartbeat Execution Error: %v\n", err)
 	}

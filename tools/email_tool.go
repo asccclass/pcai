@@ -22,6 +22,10 @@ type EmailToolArgs struct {
 
 func (t *EmailTool) Name() string { return "read_email" }
 
+func (t *EmailTool) IsSkill() bool {
+	return false
+}
+
 func (t *EmailTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

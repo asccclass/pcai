@@ -67,22 +67,25 @@ var toolHintRules = []toolHintRule{
 		},
 	},
 	{
-		Keywords: []string{"瀏覽器", "網頁", "網址", "打開網址", "讀取網頁", "browser", "url"},
+		Keywords: []string{"瀏覽器", "網頁", "網址", "打開網址", "讀取網頁", "browser", "url", "頁面", "這頁", "這個頁面", "http", "https"},
 		ToolName: "browser_open",
 		HintFunc: func(input, pendingID string) string {
-			return `[SYSTEM INSTRUCTION] 使用者要求使用瀏覽器讀取網頁內容或互動。
-執行步驟：
+			return `[SYSTEM INSTRUCTION] 使用者要求讀取網頁內容。
+你必須執行以下步驟來獲取答案：
 1. 呼叫 {"name": "browser_open", "arguments": {"url": "https://..."}}。
-2. 根據你的目的選擇下一步：
-   - 若目的只是「讀取/尋找純粹的資訊」(如報價、匯率、文章)，請直接呼叫 {"name": "browser_get_text", "arguments": {}} 取得整個網頁的純文字內容。
-   - 若你需要「點擊按鈕、輸入文字、導航」等互動，請呼叫 {"name": "browser_snapshot", "arguments": {"interactive_only": true}} 以取得可互動元素的參考 ID (ref)。
-   
-⚠️【最重要警告】：當你取得網頁內容後，請「精準回答使用者所詢問的對象」（例如使用者問南非幣，就只回答南非幣），絕對不要把網頁上所有不相關的項目（如其他國家的匯率或無關資訊）全部列出來。
-⚠️【重要格式規範】：你必須使用標準 JSON 格式包裹參數，嚴禁單獨輸出純文字指令！`
+2. 待開啟成功後，**立即**呼叫 {"name": "browser_get_text", "arguments": {}} 取得內容。
+⚠️【禁止停頓】：不要只停在開啟頁面，也不要問使用者後續操作。你必須取得文字內容後直接回答使用者的問題。`
 		},
 	},
 	{
-		Keywords: []string{"列出檔案", "目錄", "list files", "ls", "dir", "列出"},
+		Keywords: []string{"讀取內容", "抓取文字", "get text", "read content"},
+		ToolName: "browser_get_text",
+		HintFunc: func(input, pendingID string) string {
+			return `[SYSTEM INSTRUCTION] 網頁已開啟。請立即呼叫 browser_get_text 獲取內容，並針對使用者問題從中萃取答案回覆。`
+		},
+	},
+	{
+		Keywords: []string{"列出檔案", "目錄", "list files", "ls", "dir", "列出", "列下", "有什麼檔案"},
 		ToolName: "fs_list_dir",
 		HintFunc: func(input, pendingID string) string {
 			return `[SYSTEM INSTRUCTION] 使用者要求列出檔案或目錄。你必須呼叫 fs_list_dir 工具（跨平台），參數為：{"path": "."}。嚴禁使用 shell_exec 搭配 ls 或 dir 指令。`

@@ -19,6 +19,10 @@ func (t *WhatsAppSendTool) Name() string {
 	return "send_whatsapp"
 }
 
+func (t *WhatsAppSendTool) IsSkill() bool {
+	return false
+}
+
 // Definition 回傳工具定義給 LLM
 func (t *WhatsAppSendTool) Definition() api.Tool {
 	var tool api.Tool

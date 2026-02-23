@@ -24,6 +24,10 @@ func (t *MemoryForgetTool) Name() string {
 	return "memory_forget"
 }
 
+func (t *MemoryForgetTool) IsSkill() bool {
+	return false
+}
+
 func (t *MemoryForgetTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

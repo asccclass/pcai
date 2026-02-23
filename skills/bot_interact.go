@@ -31,6 +31,10 @@ func (t *BotInteractTool) Name() string {
 	return "bot_interact"
 }
 
+func (t *BotInteractTool) IsSkill() bool {
+	return false
+}
+
 func (t *BotInteractTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

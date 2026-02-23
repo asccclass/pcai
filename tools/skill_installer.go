@@ -16,7 +16,8 @@ type SkillInstaller struct {
 	BaseDir string
 }
 
-func (i *SkillInstaller) Name() string { return "install_github_skill" }
+func (i *SkillInstaller) Name() string  { return "install_github_skill" }
+func (i *SkillInstaller) IsSkill() bool { return false }
 
 func (i *SkillInstaller) Definition() api.Tool {
 	return api.Tool{

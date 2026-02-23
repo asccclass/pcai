@@ -16,6 +16,10 @@ func (t *ReloadSkillsTool) Name() string {
 	return "reload_skills"
 }
 
+func (t *ReloadSkillsTool) IsSkill() bool {
+	return false
+}
+
 func (t *ReloadSkillsTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

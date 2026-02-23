@@ -103,7 +103,6 @@ func (r *Registry) CallTool(name string, argsJSON string) (string, error) {
 		"manage_task":      "manage_cron_job",
 		"manage_scheduler": "manage_cron_job",
 		"schedule_task":    "manage_cron_job",
-		"task_planner":     "manage_cron_job",
 		"run_task":         "manage_cron_job",
 		"cron":             "manage_cron_job",
 		"manage_cron_task": "manage_cron_job",

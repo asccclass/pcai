@@ -35,6 +35,10 @@ func (t *AdvisorTool) Name() string {
 	return "analyze_architecture"
 }
 
+func (t *AdvisorTool) IsSkill() bool {
+	return false
+}
+
 func (t *AdvisorTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

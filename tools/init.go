@@ -227,8 +227,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 
 	// 基礎工具
 	registry.Register(&ShellExecTool{Mgr: bgMgr, Manager: fsManager}) // 傳入背景管理器 與 Sandbox Manager
-	registry.Register(&WebFetchTool{})
-	registry.Register(&WebSearchTool{})
+	registry.RegisterWithPriority(&WebFetchTool{}, 5)
+	registry.RegisterWithPriority(&WebSearchTool{}, 5)
 	registry.Register(&ListTasksTool{Mgr: bgMgr, SchedMgr: schedMgr}) // 傳入背景管理器與排程管理器
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&VideoConverterTool{})
@@ -240,13 +240,13 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	registry.Register(botInteractSkill.CreateTool()) // [NEW] Bot-to-Bot 通訊技能
 
 	// Browser Tools
-	registry.Register(&browserskill.BrowserOpenTool{})
+	registry.RegisterWithPriority(&browserskill.BrowserOpenTool{}, 5)
 	registry.Register(&browserskill.BrowserSnapshotTool{})
 	registry.Register(&browserskill.BrowserClickTool{})
 	registry.Register(&browserskill.BrowserTypeTool{})
 	registry.Register(&browserskill.BrowserScrollTool{})
 	registry.Register(&browserskill.BrowserGetTool{})
-	registry.Register(&browserskill.BrowserGetTextTool{})
+	registry.RegisterWithPriority(&browserskill.BrowserGetTextTool{}, 5)
 
 	// Python Sandbox Tool
 	if pyTool, err := NewPythonSandboxTool(workspacePath, home); err != nil {

@@ -63,7 +63,8 @@ type FsMkdirTool struct {
 	Manager *FileSystemManager
 }
 
-func (t *FsMkdirTool) Name() string { return "fs_mkdir" }
+func (t *FsMkdirTool) Name() string  { return "fs_mkdir" }
+func (t *FsMkdirTool) IsSkill() bool { return false }
 func (t *FsMkdirTool) Description() string {
 	return `建立目錄。輸入 JSON: {"path": "skills/new_skill"}`
 }
@@ -122,7 +123,8 @@ type FsWriteFileTool struct {
 	Manager *FileSystemManager
 }
 
-func (t *FsWriteFileTool) Name() string { return "fs_write_file" }
+func (t *FsWriteFileTool) Name() string  { return "fs_write_file" }
+func (t *FsWriteFileTool) IsSkill() bool { return false }
 func (t *FsWriteFileTool) Description() string {
 	return `寫入檔案 (若存在則覆寫)。輸入 JSON: {"path": "test.txt", "content": "hello"}`
 }
@@ -185,7 +187,8 @@ type FsListDirTool struct {
 	Manager *FileSystemManager
 }
 
-func (t *FsListDirTool) Name() string { return "fs_list_dir" }
+func (t *FsListDirTool) Name() string  { return "fs_list_dir" }
+func (t *FsListDirTool) IsSkill() bool { return false }
 func (t *FsListDirTool) Description() string {
 	return `列出目錄內容。輸入 JSON: {"path": "skills/"}`
 }
@@ -258,7 +261,8 @@ type FsRemoveTool struct {
 	Manager *FileSystemManager
 }
 
-func (t *FsRemoveTool) Name() string { return "fs_remove" }
+func (t *FsRemoveTool) Name() string  { return "fs_remove" }
+func (t *FsRemoveTool) IsSkill() bool { return false }
 func (t *FsRemoveTool) Description() string {
 	return `刪除檔案或整個目錄 (小心使用)。JSON範例: {"path": "temp_folder"}`
 }
@@ -326,7 +330,8 @@ type FsReadFileTool struct {
 	MaxReadSize int64 // 可配置的最大讀取 byte 數，若為 0 則使用預設值
 }
 
-func (t *FsReadFileTool) Name() string { return "fs_read_file" }
+func (t *FsReadFileTool) Name() string  { return "fs_read_file" }
+func (t *FsReadFileTool) IsSkill() bool { return false }
 func (t *FsReadFileTool) Description() string {
 	// 為了讓 Description 準確顯示當前設定的大小
 	limit := t.MaxReadSize
@@ -462,7 +467,8 @@ type FsAppendFileTool struct {
 	Manager *FileSystemManager
 }
 
-func (t *FsAppendFileTool) Name() string { return "fs_append_file" }
+func (t *FsAppendFileTool) Name() string  { return "fs_append_file" }
+func (t *FsAppendFileTool) IsSkill() bool { return false }
 func (t *FsAppendFileTool) Description() string {
 	return `將內容附加到檔案末尾 (Append)。適合寫入日誌或記憶。JSON範例: {"path": "logs/chat.log", "content": "\n新的記錄..."}`
 }
@@ -583,7 +589,13 @@ type ToolAlias struct {
 	NewName  string
 }
 
-func (t *ToolAlias) Name() string                    { return t.NewName }
+func (t *ToolAlias) Name() string { return t.NewName }
+func (t *ToolAlias) IsSkill() bool {
+	if s, ok := t.Original.(interface{ IsSkill() bool }); ok {
+		return s.IsSkill()
+	}
+	return false
+}
 func (t *ToolAlias) Description() string             { return t.Original.Description() }
 func (t *ToolAlias) Run(args string) (string, error) { return t.Original.Run(args) }
 

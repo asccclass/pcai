@@ -30,6 +30,10 @@ func (t *SkillGeneratorTool) Name() string {
 	return "generate_skill"
 }
 
+func (t *SkillGeneratorTool) IsSkill() bool {
+	return false
+}
+
 func (t *SkillGeneratorTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",
@@ -120,7 +124,7 @@ Reads the file at {{path}}.
 	}
 
 	content := generatedContent.String()
-	
+
 	// 3. Extract YAML header to find 'name'
 	// Simplistic parsing: find "name: value"
 	lines := strings.Split(content, "\n")

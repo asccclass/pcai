@@ -18,6 +18,10 @@ func (t *SchedulerTool) Name() string {
 	return "manage_cron_job"
 }
 
+func (t *SchedulerTool) IsSkill() bool {
+	return false
+}
+
 // Definition 滿足 AgentTool 介面，使用 ollama/api 結構
 func (t *SchedulerTool) Definition() api.Tool {
 	return api.Tool{

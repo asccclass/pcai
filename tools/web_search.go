@@ -18,6 +18,10 @@ type WebSearchTool struct{}
 
 func (t *WebSearchTool) Name() string { return "web_search" }
 
+func (t *WebSearchTool) IsSkill() bool {
+	return false
+}
+
 func (t *WebSearchTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

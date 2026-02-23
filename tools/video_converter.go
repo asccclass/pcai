@@ -26,6 +26,10 @@ type VideoConvertArgs struct {
 
 func (t *VideoConverterTool) Name() string { return "convert_videos" }
 
+func (t *VideoConverterTool) IsSkill() bool {
+	return false
+}
+
 func (t *VideoConverterTool) Definition() api.Tool {
 	var tool api.Tool
 	jsonStr := `{

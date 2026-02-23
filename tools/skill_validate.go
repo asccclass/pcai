@@ -15,7 +15,8 @@ type SkillValidateTool struct {
 	SkillsDir string // skills/ 根目錄
 }
 
-func (t *SkillValidateTool) Name() string { return "skill_validate" }
+func (t *SkillValidateTool) Name() string  { return "skill_validate" }
+func (t *SkillValidateTool) IsSkill() bool { return false }
 
 func (t *SkillValidateTool) Definition() api.Tool {
 	return api.Tool{

@@ -14,6 +14,10 @@ type ListSkillsTool struct {
 
 func (t *ListSkillsTool) Name() string { return "list_skills" }
 
+func (t *ListSkillsTool) IsSkill() bool {
+	return false
+}
+
 func (t *ListSkillsTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

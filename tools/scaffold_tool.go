@@ -11,7 +11,8 @@ import (
 
 type CreateSkillTool struct{}
 
-func (t *CreateSkillTool) Name() string { return "create_new_skill" }
+func (t *CreateSkillTool) Name() string  { return "create_new_skill" }
+func (t *CreateSkillTool) IsSkill() bool { return false }
 
 func (t *CreateSkillTool) Definition() api.Tool {
 	return api.Tool{

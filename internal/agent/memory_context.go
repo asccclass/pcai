@@ -131,7 +131,8 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 		}
 
 		// 加入收尾提示
-		sb.WriteString("\n若上述內容包含能回答使用者問題的證據（特別是日期、姓名等具體資訊），請「直接引用」並以肯定句作答，不需要再呼叫搜尋工具。\n")
+		sb.WriteString("\n⚠️【注意】：若上述內容包含能直接回答使用者問題的證據，請優先引用。但若使用者明確要求執行特定操作（如打開網頁、讀取郵件或操作檔案），你必須『立即執行』對應工具，而不僅僅是依靠記憶中舊有的資訊。")
+		sb.WriteString("\n你的身分是 PCAI (F.R.I.D.A.Y)，絕對不是使用者本人。")
 
 		return sb.String()
 	}

@@ -17,6 +17,10 @@ func (t *GitAutoCommitTool) Name() string {
 	return "git_auto_commit"
 }
 
+func (t *GitAutoCommitTool) IsSkill() bool {
+	return false
+}
+
 func (t *GitAutoCommitTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

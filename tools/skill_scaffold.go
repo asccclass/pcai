@@ -15,7 +15,8 @@ type SkillScaffoldTool struct {
 	SkillsDir string // skills/ 根目錄
 }
 
-func (t *SkillScaffoldTool) Name() string { return "skill_scaffold" }
+func (t *SkillScaffoldTool) Name() string  { return "skill_scaffold" }
+func (t *SkillScaffoldTool) IsSkill() bool { return false }
 
 func (t *SkillScaffoldTool) Definition() api.Tool {
 	return api.Tool{

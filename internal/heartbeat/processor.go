@@ -388,7 +388,7 @@ func (b *PCAIBrain) SetupDispatcher() {
 	b.dispatcher = dispatcher
 }
 
-func (b *PCAIBrain) ExecuteDecision(ctx context.Context, decisionStr string) error {
+func (b *PCAIBrain) ExecuteDecision(ctx context.Context, decisionStr string, snapshot string) error {
 	if decisionStr == "STATUS: IDLE" || decisionStr == "" {
 		return nil
 	}
@@ -402,8 +402,6 @@ func (b *PCAIBrain) ExecuteDecision(ctx context.Context, decisionStr string) err
 	}
 
 	if decision == "STATUS: IDLE" {
-		// 你也可以選擇記錄到日誌，方便日後檢查 AI 是否過濾太嚴格
-		// log.Printf("[Log] 保持沉默。原因: %s", reason)
 		return nil
 	}
 
@@ -411,7 +409,13 @@ func (b *PCAIBrain) ExecuteDecision(ctx context.Context, decisionStr string) err
 	fmt.Printf("[Reason] AI 判斷理由: %s\n", reason)
 
 	if decision == "ACTION: NOTIFY_USER" {
-		msg := fmt.Sprintf("🚨 重要通知！\n理由: %s\n內容: %s", reason, decision)
+		// 截斷快照以避免通知過長
+		truncatedSnapshot := snapshot
+		if len(truncatedSnapshot) > 500 {
+			truncatedSnapshot = truncatedSnapshot[:500] + "...(已截斷)"
+		}
+
+		msg := fmt.Sprintf("🚨 **PCAI 智慧提醒**\n\n【判定理由】：%s\n\n【環境摘要】：\n%s", reason, truncatedSnapshot)
 		// 這裡串接你的 Signal 送信工具或系統通知
 		b.dispatcher.Dispatch(ctx, "URGENT", msg)
 	}

@@ -108,6 +108,7 @@ read_when:
 3. 根據技能定義文件中的指示，結合內建的工具（tool）來進行具體任務。
 
 **禁止**直接猜測技能的參數或用法，必須先讀取文件。
+**注意**：內建工具（如 `shell_exec`, `ls`, `browser_open`, `browser_get_text`, `web_fetch`, `memory_save` 等）不屬於外部技能，可以直接呼叫，不需要執行 `skill_search`。
 
 ## 記憶協議（MEMORY PROTOCOL）
 

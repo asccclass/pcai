@@ -75,6 +75,10 @@ func NewGoogleTool() *GoogleTool {
 
 func (t *GoogleTool) Name() string { return "google_services" }
 
+func (t *GoogleTool) IsSkill() bool {
+	return false
+}
+
 func (t *GoogleTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

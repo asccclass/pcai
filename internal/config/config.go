@@ -107,7 +107,7 @@ func LoadConfig() *Config {
 
 	return &Config{
 		// 從環境變數讀取，若無則使用後方的預設值
-		Model:        getEnv("PCAI_MODEL", "llama3.3"),
+		Model:        getEnv("PCAI_MODEL", getEnv("PCAI_MODEL", "llama3.3")),
 		OllamaURL:    ensureProtocol(getEnv("OLLAMA_HOST", "http://localhost:11434")),
 		SystemPrompt: getEnv("PCAI_SYSTEM_PROMPT", CoreSystemPrompt),
 		FontPath:     getEnv("PCAI_FONT_PATH", filepath.Join(home, "assets", "fonts", "msjh.ttf")),

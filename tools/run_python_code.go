@@ -77,6 +77,10 @@ func (t *PythonSandboxTool) Name() string {
 	return "run_python_code"
 }
 
+func (t *PythonSandboxTool) IsSkill() bool {
+	return false
+}
+
 func (t *PythonSandboxTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

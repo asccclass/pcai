@@ -23,6 +23,10 @@ func (t *MemoryGetTool) Name() string {
 	return "memory_get"
 }
 
+func (t *MemoryGetTool) IsSkill() bool {
+	return false
+}
+
 func (t *MemoryGetTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",

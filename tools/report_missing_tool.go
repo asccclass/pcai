@@ -15,6 +15,10 @@ type ReportMissingTool struct{}
 
 func (t *ReportMissingTool) Name() string { return "report_missing_tool" }
 
+func (t *ReportMissingTool) IsSkill() bool {
+	return false
+}
+
 func (t *ReportMissingTool) Definition() api.Tool {
 	var tool api.Tool
 	jsonStr := `{

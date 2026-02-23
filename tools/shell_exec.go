@@ -65,6 +65,10 @@ func (t *ShellExecTool) sanitizeCommand(cmd string) string {
 
 func (t *ShellExecTool) Name() string { return "shell_exec" }
 
+func (t *ShellExecTool) IsSkill() bool {
+	return false
+}
+
 func (t *ShellExecTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",
