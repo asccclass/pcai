@@ -34,6 +34,7 @@ func (se *SearchEngine) Search(ctx context.Context, query string, topK int) (*Me
 	}
 
 	hybrid := se.mgr.cfg.Search.Hybrid
+	retrievalCfg := se.mgr.cfg.Search.Retrieval
 	candidateK := topK * hybrid.CandidateMultiplier
 	if candidateK < topK*2 {
 		candidateK = topK * 2
@@ -60,8 +61,16 @@ func (se *SearchEngine) Search(ctx context.Context, query string, topK int) (*Me
 		}
 	}
 
-	// Merge results
-	merged := se.mergeResults(vectorResults, textResults, topK, hybrid)
+	// Merge results (RRF-style fusion)
+	merged := se.mergeResults(vectorResults, textResults, candidateK, hybrid)
+
+	// 多階段評分管線 (memory-lancedb-pro)
+	merged = RunScoringPipeline(merged, retrievalCfg)
+
+	// Truncate to topK
+	if len(merged) > topK {
+		merged = merged[:topK]
+	}
 
 	// Truncate snippets
 	maxChars := se.mgr.cfg.Search.Limits.MaxSnippetChars
@@ -134,13 +143,15 @@ func (se *SearchEngine) vectorSearch(ctx context.Context, query string, topK int
 		ut, _ := time.Parse(time.RFC3339, updatedAtStr)
 		results = append(results, SearchResult{
 			Chunk: &MemoryChunk{
-				ID:        chunkID,
-				FilePath:  fp,
-				StartLine: sl,
-				EndLine:   el,
-				Content:   content,
-				Tokens:    tokens,
-				UpdatedAt: ut,
+				ID:         chunkID,
+				FilePath:   fp,
+				StartLine:  sl,
+				EndLine:    el,
+				Content:    content,
+				Tokens:     tokens,
+				Embedding:  vec, // 保留向量供 MMR 去重使用
+				Importance: 0.7, // 預設重要度
+				UpdatedAt:  ut,
 			},
 			VectorScore: score,
 			Source:      "memory",
@@ -225,27 +236,37 @@ func (se *SearchEngine) bm25Search(ctx context.Context, query string, topK int) 
 	return results, nil
 }
 
-// mergeResults 加權融合向量 + BM25 搜尋結果
+// mergeResults RRF 風格加權融合向量 + BM25 搜尋結果
+// BM25 命中時額外加成 15% (匹配 memory-lancedb-pro 的融合策略)
 func (se *SearchEngine) mergeResults(vectorResults, textResults []SearchResult, topK int, cfg HybridConfig) []SearchResult {
 	seen := make(map[string]*SearchResult)
 
-	// 加入向量搜尋結果
+	// 加入向量搜尋結果（以向量分數為基礎）
 	for _, r := range vectorResults {
 		key := r.Chunk.ID
 		sr := r
-		sr.FinalScore = r.VectorScore * cfg.VectorWeight
+		sr.FinalScore = r.VectorScore
 		seen[key] = &sr
 	}
 
-	// 融合 BM25 搜尋結果
+	// 融合 BM25 搜尋結果（RRF 風格：BM25 命中加成 15%）
 	for _, r := range textResults {
 		key := r.Chunk.ID
 		if existing, ok := seen[key]; ok {
+			// 向量 + BM25 都命中：基礎向量分 + BM25 加成 15%
 			existing.TextScore = r.TextScore
-			existing.FinalScore += r.TextScore * cfg.TextWeight
+			existing.FinalScore = clamp01(
+				existing.VectorScore+(1.0*0.15*existing.VectorScore),
+				existing.VectorScore,
+			)
 		} else {
+			// 僅 BM25 命中：給予基礎分數 (至少 0.5 或 BM25 分數)
 			sr := r
-			sr.FinalScore = r.TextScore * cfg.TextWeight
+			if r.TextScore > 0.5 {
+				sr.FinalScore = r.TextScore
+			} else {
+				sr.FinalScore = 0.5
+			}
 			seen[key] = &sr
 		}
 	}

@@ -45,6 +45,7 @@ type SearchConfig struct {
 	Limits       LimitsConfig       `json:"limits"`
 	Remote       RemoteConfig       `json:"remote"`
 	Experimental ExperimentalConfig `json:"experimental"`
+	Retrieval    RetrievalConfig    `json:"retrieval"` // 多階段評分管線配置
 	// Ollama 專用配置
 	OllamaURL string `json:"ollamaUrl"`
 }
@@ -128,23 +129,26 @@ type MemoryFlushConfig struct {
 
 // MemoryChunk 記憶文本分塊
 type MemoryChunk struct {
-	ID        string    `json:"id"`
-	FilePath  string    `json:"filePath"`
-	StartLine int       `json:"startLine"`
-	EndLine   int       `json:"endLine"`
-	Content   string    `json:"content"`
-	Tokens    int       `json:"tokens"`
-	Embedding []float32 `json:"-"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID         string    `json:"id"`
+	FilePath   string    `json:"filePath"`
+	StartLine  int       `json:"startLine"`
+	EndLine    int       `json:"endLine"`
+	Content    string    `json:"content"`
+	Tokens     int       `json:"tokens"`
+	Embedding  []float32 `json:"-"`
+	Importance float64   `json:"importance"` // 記憶重要度 0.0~1.0，預設 0.7
+	UpdatedAt  time.Time `json:"updatedAt"`
 }
 
 // SearchResult 搜尋結果
 type SearchResult struct {
-	Chunk       *MemoryChunk `json:"chunk"`
-	VectorScore float64      `json:"vectorScore"`
-	TextScore   float64      `json:"textScore"`
-	FinalScore  float64      `json:"finalScore"`
-	Source      string       `json:"source"` // "memory" | "sessions"
+	Chunk           *MemoryChunk `json:"chunk"`
+	VectorScore     float64      `json:"vectorScore"`
+	TextScore       float64      `json:"textScore"`
+	FinalScore      float64      `json:"finalScore"`
+	RecencyBoost    float64      `json:"recencyBoost,omitempty"`    // 除錯：新鮮度加成值
+	ImportanceScore float64      `json:"importanceScore,omitempty"` // 除錯：重要度加權後分數
+	Source          string       `json:"source"`                    // "memory" | "sessions"
 }
 
 // MemorySearchResponse memory_search 工具回應
@@ -203,6 +207,11 @@ func NewManager(cfg MemoryConfig) (*Manager, error) {
 		cfg.Search.Hybrid.TextWeight = 0.3
 		cfg.Search.Hybrid.CandidateMultiplier = 4
 		cfg.Search.Hybrid.Enabled = true
+	}
+
+	// 預設多階段評分管線配置
+	if cfg.Search.Retrieval.VectorWeight == 0 {
+		cfg.Search.Retrieval = DefaultRetrievalConfig()
 	}
 
 	// 預設限制
