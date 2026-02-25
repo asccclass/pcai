@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -23,6 +24,8 @@ type Agent struct {
 	Options      ollama.Options
 	Provider     llms.ChatStreamFunc
 	Logger       *SystemLogger // [NEW] 系統日誌
+	ActiveBuffer *history.ActiveBuffer
+	DailyLogger  *history.DailyLogger
 
 	// Callbacks for UI interaction
 	OnGenerateStart        func()
@@ -38,6 +41,18 @@ func NewAgent(modelName, systemPrompt string, session *history.Session, registry
 	// 預設使用 Ollama
 	defaultProvider, _ := llms.GetProviderFunc("ollama")
 
+	// 初始化每日日誌與 Active Buffer
+	home, _ := os.Getwd()
+	kbDir := filepath.Join(home, "botmemory")
+	dailyLogger := history.NewDailyLogger(kbDir)
+	activeBuffer := history.NewActiveBuffer(4000, dailyLogger)
+
+	// 自動恢復今日會話
+	entries, _ := dailyLogger.LoadToday()
+	for _, e := range entries {
+		activeBuffer.Add(ollama.Message{Role: e.Role, Content: e.Content})
+	}
+
 	return &Agent{
 		Session:      session,
 		ModelName:    modelName,
@@ -46,6 +61,8 @@ func NewAgent(modelName, systemPrompt string, session *history.Session, registry
 		Options:      ollama.Options{Temperature: 0.7, TopP: 0.9},
 		Provider:     defaultProvider,
 		Logger:       logger,
+		ActiveBuffer: activeBuffer,
+		DailyLogger:  dailyLogger,
 	}
 }
 
@@ -97,8 +114,27 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		}
 	}
 
+	// [ACTIVE-BUFFER] 注入當前日誌上下文
+	if a.ActiveBuffer != nil && len(a.ActiveBuffer.GetMessages()) > 0 {
+		var activeCtx strings.Builder
+		activeCtx.WriteString("【今日對話上下文】\n")
+		for _, m := range a.ActiveBuffer.GetMessages() {
+			activeCtx.WriteString(fmt.Sprintf("%s: %s\n", m.Role, m.Content))
+		}
+		userContent = activeCtx.String() + "\n\n" + userContent
+	}
+
 	// 將使用者輸入加入對話歷史
-	a.Session.Messages = append(a.Session.Messages, ollama.Message{Role: "user", Content: userContent})
+	msg := ollama.Message{Role: "user", Content: userContent}
+	a.Session.Messages = append(a.Session.Messages, msg)
+
+	// 記錄到 Active Buffer 和每日日誌
+	if a.ActiveBuffer != nil {
+		a.ActiveBuffer.Add(ollama.Message{Role: "user", Content: input}) // 記錄原始輸入
+	}
+	if a.DailyLogger != nil {
+		_ = a.DailyLogger.Record(ollama.Message{Role: "user", Content: input})
+	}
 
 	var finalResponse string
 
@@ -328,7 +364,7 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			lines := strings.Split(content, "\n")
 			for i := len(lines) - 1; i >= 0; i-- {
 				line := strings.TrimSpace(lines[i])
-				if m := nakedRe.FindStringSubmatch(line); m != nil && len(m) == 3 {
+				if m := nakedRe.FindStringSubmatch(line); len(m) == 3 {
 					funcName := m[1]
 					argsStr := m[2]
 
@@ -463,8 +499,30 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 				a.OnModelMessageComplete(finalResponse)
 			}
 			// [LOG] 記錄 AI 回應
-			if a.Logger != nil {
-				a.Logger.LogAIResponse(finalResponse)
+			if finalResponse != "" {
+				if a.Logger != nil {
+					a.Logger.LogAIResponse(finalResponse)
+				}
+				// 記錄到 Active Buffer 和每日日誌
+				if a.ActiveBuffer != nil {
+					a.ActiveBuffer.Add(ollama.Message{Role: "assistant", Content: finalResponse})
+					// 檢查是否需要歸納
+					if a.ActiveBuffer.ShouldSummarize() {
+						fmt.Println("🧠 [Memory] 偵測到上下文過長，觸發自動歸納...")
+						summarizeFunc := func(model string, prompt string) (string, error) {
+							var res strings.Builder
+							_, err := ollama.ChatStream(model, []ollama.Message{
+								{Role: "system", Content: "你是一個對話摘要專家。請幫我精煉對話。"},
+								{Role: "user", Content: prompt},
+							}, nil, a.Options, func(c string) { res.WriteString(c) })
+							return res.String(), err
+						}
+						_ = a.ActiveBuffer.TriggerSummarization(a.ModelName, summarizeFunc)
+					}
+				}
+				if a.DailyLogger != nil {
+					_ = a.DailyLogger.Record(ollama.Message{Role: "assistant", Content: finalResponse})
+				}
 			}
 		}
 

@@ -20,6 +20,7 @@ import (
 	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/scheduler"
+	"github.com/asccclass/pcai/llms/ollama"
 	"github.com/asccclass/pcai/skills"
 	browserskill "github.com/asccclass/pcai/skills/browser"
 	dclient "github.com/docker/docker/client"
@@ -89,6 +90,29 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 			log.Println(msg)
 		}
 	})
+
+	// [NEW] 註冊背景個性化分析任務 (閒置時執行)
+	schedMgr.RegisterTaskType("personalization_extraction", func() {
+		fmt.Println("🧠 [Personalization] 開始分析日誌以提取用戶偏好...")
+		worker := history.NewPersonalizationWorker(filepath.Join(home, "botmemory"), sqliteDB, cfg.Model, func(model, prompt string) (string, error) {
+			var resp strings.Builder
+			_, err := ollama.ChatStream(model, []ollama.Message{
+				{Role: "system", Content: "你是一個個性化分析專家。"},
+				{Role: "user", Content: prompt},
+			}, nil, ollama.Options{Temperature: 0.3}, func(c string) { resp.WriteString(c) })
+			return resp.String(), err
+		})
+		if err := worker.RunOnce(); err != nil {
+			log.Printf("⚠️ [Personalization] 提取失敗: %v", err)
+		} else {
+			fmt.Println("✅ [Personalization] 提取完成！")
+		}
+	})
+
+	// 預設每 4 小時分析一次，或視為系統任務
+	if err := schedMgr.EnsureSystemJob("background_personalization", "0 */4 * * *", "personalization_extraction", "定期分析日誌提取用戶偏好"); err != nil {
+		log.Printf("ℹ️ [Scheduler] personalization job: %v", err)
+	}
 
 	// 註冊每日簡報任務 (可以是 read_calendars 或 daily_calendar_report)
 	schedMgr.RegisterTaskType("read_calendars", func() {

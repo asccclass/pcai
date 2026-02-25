@@ -64,6 +64,15 @@ func (db *DB) migrate() error {
 		content TEXT NOT NULL,
 		expires_at DATETIME NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS permanent_memory (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		category TEXT NOT NULL, -- 'preference', 'entity'
+		key TEXT NOT NULL,      -- e.g., 'favorite_color'
+		value TEXT NOT NULL,    -- structured content
+		tags TEXT,              -- e.g., 'ui', 'user_info'
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(category, key)
 	);`
 
 	_, err := db.Exec(query)
@@ -289,4 +298,49 @@ func (db *DB) GetLastHeartbeatAction(ctx context.Context, actionPrefix string) (
 		t, err = time.Parse(time.RFC3339, createdAtStr)
 	}
 	return t, err
+}
+
+// ==================== Permanent Memory (Personalization) ====================
+
+// PermanentMemoryEntry 永久記憶條目
+type PermanentMemoryEntry struct {
+	ID        int    `json:"id"`
+	Category  string `json:"category"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Tags      string `json:"tags"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// AddPermanentMemory 新增或更新永久記憶
+func (db *DB) AddPermanentMemory(ctx context.Context, category, key, value, tags string) error {
+	query := `INSERT INTO permanent_memory (category, key, value, tags, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+			  ON CONFLICT(category, key) DO UPDATE SET value=excluded.value, tags=excluded.tags, updated_at=CURRENT_TIMESTAMP`
+	_, err := db.ExecContext(ctx, query, category, key, value, tags)
+	return err
+}
+
+// GetPermanentMemory 取得永久記憶
+func (db *DB) GetPermanentMemory(ctx context.Context, category string) ([]PermanentMemoryEntry, error) {
+	var rows *sql.Rows
+	var err error
+	if category != "" {
+		rows, err = db.QueryContext(ctx, "SELECT id, category, key, value, tags, updated_at FROM permanent_memory WHERE category = ?", category)
+	} else {
+		rows, err = db.QueryContext(ctx, "SELECT id, category, key, value, tags, updated_at FROM permanent_memory")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []PermanentMemoryEntry
+	for rows.Next() {
+		var e PermanentMemoryEntry
+		if err := rows.Scan(&e.ID, &e.Category, &e.Key, &e.Value, &e.Tags, &e.UpdatedAt); err == nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries, nil
 }
