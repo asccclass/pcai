@@ -41,7 +41,14 @@ func (w *PersonalizationWorker) RunOnce() error {
 	// 只分析最近 3 天的日誌
 	now := time.Now()
 	for _, file := range files {
-		if filepath.Ext(file.Name()) != ".json" {
+		name := file.Name()
+		if filepath.Ext(name) != ".json" {
+			continue
+		}
+
+		// 確保只處理 DailyLogger 產生的 YYYY-MM-DD.json 日誌檔，過濾掉 session_*.json 等其他檔案
+		dateStr := strings.TrimSuffix(name, ".json")
+		if _, err := time.Parse("2006-01-02", dateStr); err != nil {
 			continue
 		}
 

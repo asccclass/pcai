@@ -48,6 +48,27 @@ func (c *Chunker) ChunkText(source string, text string) []*MemoryChunk {
 	chunkChars := c.ChunkSize * 4 // 粗略將 Token -> 字元 (1 token ≈ 4 chars)
 	overlapChars := c.ChunkOverlap * 4
 
+	// [FIX] 預處理：將長度超過 chunkChars 的單行強制切分為多行
+	// 避免像 base64 或 JSON 等無換行的超長字串撐爆單一 Chunk
+	var splitLines []string
+	for _, line := range lines {
+		runeCount := utf8.RuneCountInString(line)
+		if runeCount <= chunkChars {
+			splitLines = append(splitLines, line)
+		} else {
+			// 強制以 chunkChars 為單位切分
+			runes := []rune(line)
+			for i := 0; i < len(runes); i += chunkChars {
+				end := i + chunkChars
+				if end > len(runes) {
+					end = len(runes)
+				}
+				splitLines = append(splitLines, string(runes[i:end]))
+			}
+		}
+	}
+	lines = splitLines
+
 	var chunks []*MemoryChunk
 	start := 0
 
@@ -73,7 +94,7 @@ func (c *Chunker) ChunkText(source string, text string) []*MemoryChunk {
 			StartLine: start + 1,
 			EndLine:   end,
 			Content:   content,
-			Tokens:    estimateTokens(content),
+			Tokens:    CountTokens(content),
 			UpdatedAt: time.Now(),
 		}
 		chunks = append(chunks, chunk)
@@ -92,17 +113,6 @@ func (c *Chunker) ChunkText(source string, text string) []*MemoryChunk {
 	}
 
 	return chunks
-}
-
-// estimateTokens 粗略估算文本 Token 數
-func estimateTokens(text string) int {
-	// 英文: ~1 token / 4 chars; 中文: ~1 token / 2 chars
-	// 使用保守估算：rune count / 2
-	n := utf8.RuneCountInString(text)
-	if n == 0 {
-		return 0
-	}
-	return n/2 + 1
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -158,21 +168,29 @@ func (idx *Indexer) IndexFile(ctx context.Context, filePath string) error {
 		return nil
 	}
 
-	// 批次嵌入
+	// 批次嵌入 (分批傳送以避免超過 context length 限制)
 	if idx.mgr.embedder != nil {
-		texts := make([]string, len(chunks))
-		for i, c := range chunks {
-			texts[i] = c.Content
-		}
+		batchSize := 1 // 每次發送 1 個 Chunk，確保不超過模型預設的 context (通常為 8192 或 2048 token)
+		for i := 0; i < len(chunks); i += batchSize {
+			end := i + batchSize
+			if end > len(chunks) {
+				end = len(chunks)
+			}
 
-		embeddings, err := idx.getEmbeddingsWithCache(ctx, texts)
-		if err != nil {
-			return fmt.Errorf("embed: %w", err)
-		}
+			batchTexts := make([]string, end-i)
+			for j := i; j < end; j++ {
+				batchTexts[j-i] = chunks[j].Content
+			}
 
-		for i, emb := range embeddings {
-			if i < len(chunks) {
-				chunks[i].Embedding = emb
+			batchEmbeddings, err := idx.getEmbeddingsWithCache(ctx, batchTexts)
+			if err != nil {
+				return fmt.Errorf("embed batch %d-%d: %w", i, end-1, err)
+			}
+
+			for j, emb := range batchEmbeddings {
+				if i+j < len(chunks) {
+					chunks[i+j].Embedding = emb
+				}
 			}
 		}
 	}

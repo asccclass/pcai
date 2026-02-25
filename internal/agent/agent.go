@@ -34,6 +34,10 @@ type Agent struct {
 	OnToolResult           func(result string)
 	OnShortTermMemory      func(source, content string) // 短期記憶自動存入回調
 	OnMemorySearch         func(query string) string    // 記憶預搜尋回調
+	OnCheckPendingPlan     func() string                // 未完成任務檢查回調
+	OnAcquireTaskLock      func() bool                  // 獲取任務鎖
+	OnReleaseTaskLock      func()                       // 釋放任務鎖
+	OnIsTaskLocked         func() bool                  // 檢查任務鎖
 }
 
 // NewAgent 建立一個新的 Agent 實例
@@ -101,8 +105,42 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 		}
 	}
 
+	// [MULTI-STEP] 偵測多步驟意圖，若偵測到則注入計畫編排 Prompt
+	multiStepDetected := false
+	if multiStepHint := detectMultiStepIntent(input); multiStepHint != "" {
+		// 檢查任務鎖：若已有任務在執行，不允許建立新計畫
+		if a.OnIsTaskLocked != nil && a.OnIsTaskLocked() {
+			fmt.Println("⚠️ [Agent] 已有任務在執行中，無法建立新計畫")
+		} else {
+			userContent = input + "\n\n" + multiStepHint
+			multiStepDetected = true
+			// 獲取任務鎖
+			if a.OnAcquireTaskLock != nil {
+				a.OnAcquireTaskLock()
+			}
+			fmt.Println("🧩 [Agent] 偵測到多步驟意圖，啟用計畫編排模式")
+		}
+	}
+
+	// [TASK RECOVERY] 若非新計畫模式，檢查是否有未完成的計畫需要恢復
+	if !multiStepDetected && a.OnCheckPendingPlan != nil {
+		if resumeHint := a.OnCheckPendingPlan(); resumeHint != "" {
+			// 檢查任務鎖
+			if a.OnIsTaskLocked != nil && a.OnIsTaskLocked() {
+				fmt.Println("⚠️ [Agent] 已有任務在執行中，跳過恢復")
+			} else {
+				userContent = input + "\n\n" + resumeHint
+				// 獲取任務鎖
+				if a.OnAcquireTaskLock != nil {
+					a.OnAcquireTaskLock()
+				}
+				fmt.Println("🔄 [Agent] 偵測到未完成任務，注入恢復指令")
+			}
+		}
+	}
+
 	if hint := getToolHint(input, lastPendingID); hint != "" {
-		userContent = input + "\n\n" + hint
+		userContent = userContent + "\n\n" + hint
 	}
 
 	// [MEMORY-FIRST] 搜尋記憶，注入相關上下文
@@ -688,6 +726,20 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 				Role:    "tool",
 				Content: toolFeedback,
 			})
+
+			// [CONTINUOUS EXECUTION] task_planner 步驟完成後，注入繼續執行的系統指令
+			// 防止 LLM 在更新一個步驟後就回覆使用者而中斷計畫
+			if tc.Function.Name == "task_planner" && toolErr == nil {
+				if a.OnCheckPendingPlan != nil {
+					if continueHint := a.OnCheckPendingPlan(); continueHint != "" {
+						a.Session.Messages = append(a.Session.Messages, ollama.Message{
+							Role:    "system",
+							Content: "[SYSTEM] ⚠️ 計畫中仍有未完成的步驟。你必須立即繼續執行下一個步驟，不要回覆使用者。",
+						})
+						fmt.Println("🔄 [Agent] 計畫仍有未完成步驟，強制繼續執行")
+					}
+				}
+			}
 		}
 
 		if forceBreakState {

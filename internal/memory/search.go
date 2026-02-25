@@ -78,10 +78,8 @@ func (se *SearchEngine) Search(ctx context.Context, query string, topK int) (*Me
 		maxChars = 700
 	}
 	for i := range merged {
-		runes := []rune(merged[i].Chunk.Content)
-		if len(runes) > maxChars {
-			merged[i].Chunk.Content = string(runes[:maxChars]) + "…"
-		}
+		// 使用 Token 精準截斷，將 maxChars 視為 MaxTokens
+		merged[i].Chunk.Content = TruncateByTokens(merged[i].Chunk.Content, maxChars)
 	}
 
 	providerName := "none"

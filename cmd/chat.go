@@ -93,6 +93,12 @@ func runChat(cmd *cobra.Command, args []string) {
 		myAgent.OnMemorySearch = agent.BuildMemorySearchFunc(tools.GlobalDB, tools.GlobalMemoryToolKit)
 	}
 
+	// [TASK RECOVERY] 設定未完成任務檢查回調
+	myAgent.OnCheckPendingPlan = tools.CheckPendingPlan
+	myAgent.OnAcquireTaskLock = tools.AcquireTaskLock
+	myAgent.OnReleaseTaskLock = tools.ReleaseTaskLock
+	myAgent.OnIsTaskLocked = tools.IsTaskLocked
+
 	// 設定 UI 回調 (Bridging Agent Events -> CLI Glamour UI)
 	myAgent.OnGenerateStart = func() {
 		// 恢復 "AI 正在思考中..." 的暫時性提示

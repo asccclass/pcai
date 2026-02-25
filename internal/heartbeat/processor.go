@@ -670,5 +670,28 @@ func (b *PCAIBrain) RunPatrol(ctx context.Context) error {
 		fmt.Printf("🕵️ [Heartbeat] 巡邏完畢: 狀態靜默。\n")
 	}
 
+	// [TASK RECOVERY] 巡邏完成後，檢查是否有未完成的任務計畫需要恢復
+	if b.tools != nil {
+		if resumeHint, err := b.tools.CallTool("task_planner", `{"action":"get"}`); err == nil && resumeHint != "" && !strings.Contains(resumeHint, "沒有執行中的計畫") {
+			fmt.Println("🔄 [Heartbeat] 偵測到未完成任務，嘗試恢復執行...")
+
+			// 建立專用的 Recovery Agent Session
+			recoverySess := history.NewSession()
+			recoverySess.ID = "session_task_recovery_" + fmt.Sprint(time.Now().Unix())
+			recoverySess.Messages = append(recoverySess.Messages, ollama.Message{Role: "system", Content: systemPrompt})
+
+			recoveryAgent := agent.NewAgent(b.modelName, systemPrompt, recoverySess, registry, nil)
+
+			// 給 Recovery Agent 注入恢復指令
+			recoveryInput := fmt.Sprintf("系統偵測到未完成的任務計畫，請繼續執行。\n\n%s", resumeHint)
+			recoveryResp, err := recoveryAgent.Chat(recoveryInput, nil)
+			if err != nil {
+				fmt.Printf("⚠️ [Heartbeat] 任務恢復執行失敗: %v\n", err)
+			} else {
+				fmt.Printf("✅ [Heartbeat] 任務恢復完成: %s...\n", recoveryResp[:min(len(recoveryResp), 100)])
+			}
+		}
+	}
+
 	return nil
 }

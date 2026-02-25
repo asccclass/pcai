@@ -72,9 +72,8 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 					sb.WriteString("[MEMORY CONTEXT] 以下是系統短期記憶中的相關資訊：\n")
 					for i, e := range entries {
 						content := strings.TrimSpace(e.Content)
-						if len(content) > 1000 {
-							content = content[:1000] + "...«已截斷»"
-						}
+						content = memory.TruncateByTokens(content, 1000)
+
 						sb.WriteString(fmt.Sprintf("\n--- 近期紀錄 %d [%s] ---\n%s\n", i+1, e.CreatedAt, content))
 					}
 					sb.WriteString("\n")
@@ -97,10 +96,8 @@ func BuildMemorySearchFunc(db *database.DB, tk *memory.ToolKit) func(query strin
 						break
 					}
 					content := strings.TrimSpace(res.Chunk.Content)
-					runes := []rune(content)
-					if len(runes) > 1500 {
-						content = string(runes[:1500]) + "...«已截斷»"
-					}
+					content = memory.TruncateByTokens(content, 1500)
+
 					// 輸出 debug 以了解為何常常被略過
 					fmt.Printf("[Memory Debug] Match %d: FinalScore=%.3f, VectorScore=%.3f, TextScore=%.3f\n", i, res.FinalScore, res.VectorScore, res.TextScore)
 

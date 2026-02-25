@@ -135,3 +135,73 @@ func getToolHint(input, pendingID string) string {
 	}
 	return ""
 }
+
+// ─────────────────────────────────────────────────────────────
+// 多步驟意圖偵測 (Multi-Step Intent Detection)
+// ─────────────────────────────────────────────────────────────
+
+// chainingKeywords 連動關鍵字：使用者明確表達多步驟意圖
+var chainingKeywords = []string{
+	"然後", "之後", "接著", "以及", "同時",
+	"整理成", "彙整", "統整", "幫我", "再",
+	"步驟", "依序", "順序", "先", "最後",
+	"and then", "after that", "also", "next", "finally",
+	"step by step", "followed by",
+}
+
+// detectMultiStepIntent 偵測使用者輸入是否包含需要多步驟執行的意圖
+// 回傳 Planning Prompt 或空字串
+func detectMultiStepIntent(input string) string {
+	lower := strings.ToLower(input)
+
+	// 策略 1: 檢查是否命中 ≥2 個不同的工具類別關鍵字
+	matchedCategories := make(map[string]bool)
+	for _, rule := range toolHintRules {
+		for _, kw := range rule.Keywords {
+			if strings.Contains(lower, strings.ToLower(kw)) {
+				matchedCategories[rule.ToolName] = true
+				break // 一個類別只計算一次
+			}
+		}
+	}
+
+	isMultiStep := len(matchedCategories) >= 2
+
+	// 策略 2: 檢查是否包含連動關鍵字
+	if !isMultiStep {
+		chainingCount := 0
+		for _, kw := range chainingKeywords {
+			if strings.Contains(lower, strings.ToLower(kw)) {
+				chainingCount++
+				if chainingCount >= 2 {
+					isMultiStep = true
+					break
+				}
+			}
+		}
+	}
+
+	if !isMultiStep {
+		return ""
+	}
+
+	// 構建 Planning Prompt
+	today := time.Now().Format("2006-01-02 15:04")
+	return fmt.Sprintf(`[SYSTEM INSTRUCTION — 複雜任務編排模式]
+⚠️ 系統偵測到此請求涉及多個步驟或上下文連動的操作。
+
+你必須遵循以下「先計畫再執行」流程：
+
+1. **分析使用者意圖**：仔細閱讀使用者的完整請求，拆解為具體的執行步驟。
+2. **建立計畫**：立即呼叫 task_planner 工具建立計畫：
+   {"name": "task_planner", "arguments": {"action": "create", "goal": "使用者的總目標", "steps": "步驟1;步驟2;步驟3"}}
+3. **依序執行**：按照計畫中的步驟，逐一執行對應的工具呼叫。每完成一步後，使用 task_planner(action="update") 更新步驟狀態。
+4. **彙整結果**：所有步驟完成後，彙整各步驟結果，給出最終回答。最後呼叫 task_planner(action="finish") 結束計畫。
+
+📅 當前時間: %s
+
+注意事項：
+- 每個步驟應該具體到對應的工具呼叫
+- 若某步驟失敗，記錄失敗原因後繼續下一步
+- 不要跳過計畫建立步驟，直接執行工具`, today)
+}

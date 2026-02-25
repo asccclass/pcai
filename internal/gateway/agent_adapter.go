@@ -14,16 +14,20 @@ import (
 
 // AgentAdapter 負責管理多個 Telegram 使用者的 Agent 實例
 type AgentAdapter struct {
-	agents            map[string]*agent.Agent
-	registry          *core.Registry
-	modelName         string
-	systemPrompt      string
-	mu                sync.Mutex
-	router            *Router
-	debug             bool
-	logger            *agent.SystemLogger          // 共用日誌
-	onShortTermMemory func(source, content string) // 短期記憶回調
-	onMemorySearch    func(query string) string    // 記憶預搜尋回調
+	agents             map[string]*agent.Agent
+	registry           *core.Registry
+	modelName          string
+	systemPrompt       string
+	mu                 sync.Mutex
+	router             *Router
+	debug              bool
+	logger             *agent.SystemLogger          // 共用日誌
+	onShortTermMemory  func(source, content string) // 短期記憶回調
+	onMemorySearch     func(query string) string    // 記憶預搜尋回調
+	onCheckPendingPlan func() string                // 未完成任務檢查回調
+	onAcquireTaskLock  func() bool                  // 獲取任務鎖
+	onReleaseTaskLock  func()                       // 釋放任務鎖
+	onIsTaskLocked     func() bool                  // 檢查任務鎖
 }
 
 // NewAgentAdapter 建立新的 Adapter
@@ -47,6 +51,18 @@ func (a *AgentAdapter) SetShortTermMemoryCallback(fn func(source, content string
 // SetMemorySearchCallback 設定記憶預搜尋回調
 func (a *AgentAdapter) SetMemorySearchCallback(fn func(query string) string) {
 	a.onMemorySearch = fn
+}
+
+// SetPendingPlanCallback 設定未完成任務檢查回調
+func (a *AgentAdapter) SetPendingPlanCallback(fn func() string) {
+	a.onCheckPendingPlan = fn
+}
+
+// SetTaskLockCallbacks 設定任務鎖回調
+func (a *AgentAdapter) SetTaskLockCallbacks(acquire func() bool, release func(), isLocked func() bool) {
+	a.onAcquireTaskLock = acquire
+	a.onReleaseTaskLock = release
+	a.onIsTaskLocked = isLocked
 }
 
 // Process 實作 Processor 介面
@@ -157,6 +173,18 @@ func (a *AgentAdapter) getOrCreateAgent(sessionID string) *agent.Agent {
 	// 設定記憶預搜尋回調
 	if a.onMemorySearch != nil {
 		newAgent.OnMemorySearch = a.onMemorySearch
+	}
+
+	// 設定未完成任務檢查回調
+	if a.onCheckPendingPlan != nil {
+		newAgent.OnCheckPendingPlan = a.onCheckPendingPlan
+	}
+
+	// 設定任務鎖回調
+	if a.onAcquireTaskLock != nil {
+		newAgent.OnAcquireTaskLock = a.onAcquireTaskLock
+		newAgent.OnReleaseTaskLock = a.onReleaseTaskLock
+		newAgent.OnIsTaskLocked = a.onIsTaskLocked
 	}
 
 	// 設定 Callbacks (為了 debug)

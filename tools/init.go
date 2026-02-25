@@ -556,6 +556,10 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 			adapter.SetMemorySearchCallback(agent.BuildMemorySearchFunc(sqliteDB, GlobalMemoryToolKit))
 		}
 
+		// [TASK RECOVERY] 設定未完成任務檢查回調
+		adapter.SetPendingPlanCallback(CheckPendingPlan)
+		adapter.SetTaskLockCallbacks(AcquireTaskLock, ReleaseTaskLock, IsTaskLocked)
+
 		// 2. 建立 Dispatcher
 		// 注意：Dispatcher 目前綁定 TelegramAdminID，若 WhatsApp 來源不同管理者，可能需擴充 Dispatcher
 		// 但為簡化，暫時共用 Admin ID 檢查 (Dispatcher 內部若不強制 Admin 則沒差)
