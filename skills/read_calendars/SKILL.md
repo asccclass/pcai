@@ -1,89 +1,75 @@
 ---
 name: read_calendars
-description: Read Google Calendar events and availability. Use this tool to list events for a specific date range.
-command: gog calendar events --all --from {{from}} --to {{to}} --json
+description: 讀取所有存取權限內的 Google 行事曆（含主要、自建、他人分享）。此工具會先列出所有行事曆及其權限類別（如 owner, reader），再抓取指定時間範圍內的所有事件，供 LLM 進行整合分析。
+command: |
+  echo "--- CALENDAR LIST ---" && \
+  gog calendar calendars --json && \
+  echo "--- ALL EVENTS ---" && \
+  gog calendar events --all --from {{from}} --to {{to}} --json
+options:
+  from:
+    description: "開始時間 (例如: today 或 2026-02-26)"
+    default: "today"
+  to:
+    description: "結束時間 (例如: today 或 2026-02-28)"
+    default: "today"
+
+---
+name: check_availability_all
+description: 檢查所有行事曆的空閒/忙碌狀態 (Free/Busy) 以偵測潛在衝突。此工具會先獲取行事曆清單，並同時對所有行事曆發出可用性查詢。
+command: |
+  echo "--- CALENDAR LIST ---" && \
+  gog calendar calendars --json && \
+  echo "--- GLOBAL AVAILABILITY ---" && \
+  gog calendar freebusy --all --from {{from}} --to {{to}} --json
+options:
+  from:
+    description: "查詢開始時間 (RFC3339 或 relative)"
+    default: "today"
+  to:
+    description: "查詢結束時間 (RFC3339 或 relative)"
+    default: "today"
+
+---
+name: create_event_smart
+description: 智慧新增行程。LLM 會先讀取行事曆清單以判斷最適合的 calendar_id（例如：工作相關行程選擇工作行事曆），再新增行程。
+command: |
+  echo "--- AVAILABLE CALENDARS ---" && \
+  gog calendar calendars --json && \
+  echo "--- CREATING EVENT ---" && \
+  gog calendar create {{calendar_id}} --summary "{{summary}}" --from {{from}} --to {{to}} --json
 options:
   calendar_id:
-    - primary
+    description: "由 LLM 從行事曆清單中選出的 ID (例如: primary 或 email 地址)"
+  summary:
+    description: "行程標題"
+  from:
+    description: "行程開始時間"
+  to:
+    description: "行程結束時間"
 ---
 
-# Google Calendar (gog) Skill
+# Google Calendar (gog) Skill - 全域智慧版
 
-## Overview
-This skill provides capabilities to read Google Calendar data using the `gog calendar` command-line interface. It focuses on listing calendars, retrieving events, and checking availability.
+## 技能概覽
+本技能解決了 `gog` 預設僅操作主要行事曆的限制。透過自動化指令組合，確保 LLM 在每次操作前都能獲取最新的行事曆清單，實現「智慧選取」與「全域讀取」。
 
-## Core Concepts
+## 核心功能
 
-### Calendar IDs
-- `primary`: The authenticated user's primary calendar.
-- Email address: Specific calendar identifier (e.g., `user@example.com`).
+### 1. 全域讀取與衝突檢查
+- **read_all_calendar_data**: 同時獲取行事曆屬性與具體事件。
+- **check_availability_all**: 跨行事曆檢查忙碌區間，預設查詢當天狀態。
 
-### Timezone Handling
-- Events are returned with timezone information.
-- Use `--json` output for precise parsing of start/end times and timezones.
-- Date/Time inputs support RFC3339, relative terms (`today`, `tomorrow`), or simple dates.
-
----
-
-## Commands Reference
-
-### 1. List Calendars
-
-List all calendars accessible to the user.
-
-```bash
-gog calendar calendars
-```
-
-**Useful Flags:**
-- `--json`: Output structured JSON (recommended for parsing).
-- `--min-access-role string`: Filter by access role (e.g., `owner`, `reader`).
-- `--show-deleted`: Include deleted calendars.
-- `--show-hidden`: Include hidden calendars.
-
-### 2. List Events
-
-Retrieve events from a specific calendar for a given date range.
-
-**Parameters:**
-- `from`: Start date/time (e.g., `2025-01-01` or `2025-01-01T09:00:00Z`).
-- `to`: End date/time (e.g., `2025-01-31` or `2025-01-31T17:00:00Z`).
-
-#### Basic Usage
-```bash
-gog calendar events <calendarId> [flags]
-```
-
-#### Time-Based Queries
-- **Today**: `gog calendar events primary --today`
-- **Tomorrow**: `gog calendar events primary --tomorrow`
-- **This Week**: `gog calendar events primary --week`
-- **Next N Days**: `gog calendar events primary --days 7`
-- **Specific Range**:
-  ```bash
-  gog calendar events primary --from 2025-01-01T00:00:00Z --to 2025-01-31T23:59:59Z
-  ```
-
-#### Search
-- **Query**: `gog calendar events primary --query "meeting"`
-
-#### Output Formats
-- **JSON (Recommended)**: `gog calendar events primary --json`
-  - Provides full event details including IDs, HTML links, attendees, and exact timestamps.
-- **Fields Selection**: `gog calendar events primary --json --select "summary,start,end"`
-
-### 3. Check Availability (Free/Busy)
-
-Check free/busy information for a set of calendars.
-
-```bash
-gog calendar freebusy --calendars "primary,other@example.com" --from 2025-01-01T09:00:00Z --to 2025-01-01T17:00:00Z
-```
+### 2. 智慧創建事件 (`create_event_smart`)
+- **自動導航**：在執行新增動作前，工具會強制輸出 `CALENDAR LIST`。LLM 必須對照 `summary` 與 `accessRole` 來決定目標行事曆。
+- **寫入權限檢查**：LLM 應避開 `accessRole: reader` 的行事曆（僅唯讀），並優先選擇 `owner` 或 `writer` 權限的行事曆進行寫入。
+- **預設與彈性**：若使用者未指定行事曆，LLM 應根據行程內容判斷；若內容模糊，則預設寫入 `primary`。
 
 ---
 
-## Best Practices
+## 指令參考
 
-1.  **Always use `--json` for programmatic access**: The default text output is designed for human readability and may change. JSON provides a stable contract.
-2.  **Explicit Time Ranges**: When possible, specify `--from` and `--to` to limit the data fetched and ensure you get the expected time window.
-3.  **Timezones**: Be aware that `gog` handles timezones. When parsing JSON, respect the `timeZone` field in the response if present, or the offsets in `dateTime` fields.
+### 智慧新增行程範例
+```bash
+# LLM 將依據情境自動填入參數
+gog calendar create "work_email@gmail.com" --summary "專案週報" --from "2026-02-26T14:00:00Z" --to "2026-02-26T15:00:00Z" --json
