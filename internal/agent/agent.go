@@ -42,8 +42,12 @@ type Agent struct {
 
 // NewAgent 建立一個新的 Agent 實例
 func NewAgent(modelName, systemPrompt string, session *history.Session, registry *core.Registry, logger *SystemLogger) *Agent {
-	// 預設使用 Ollama
-	defaultProvider, _ := llms.GetProviderFunc("ollama")
+	// 預設 Provider：從環境變數 PCAI_PROVIDER 讀取（可選 "ollama", "copilot"），預設為 "ollama"
+	providerName := os.Getenv("PCAI_PROVIDER")
+	if providerName == "" {
+		providerName = "ollama"
+	}
+	defaultProvider, _ := llms.GetProviderFunc(providerName)
 
 	// 初始化每日日誌與 Active Buffer
 	home, _ := os.Getwd()
@@ -528,6 +532,59 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 			}
 		}
 
+		// [FIX] 補救措施 3.5：處理敘述式工具呼叫 + key: value 參數模式
+		// LLM 有時會輸出: "我將呼叫 read_calendars 工具...\n from: 2026-02-26\n to: 2026-02-27"
+		if len(aiMsg.ToolCalls) == 0 {
+			content := strings.TrimSpace(aiMsg.Content)
+
+			// 在文字中搜尋已知工具名稱，同時收集該工具的參數名清單
+			detectedTool := ""
+			var toolParamNames []string
+			for _, tDef := range toolDefs {
+				if strings.Contains(content, tDef.Function.Name) {
+					detectedTool = tDef.Function.Name
+					toolParamNames = tDef.Function.Parameters.Required
+					break
+				}
+			}
+
+			if detectedTool != "" && len(toolParamNames) > 0 {
+				// 提取 key: value 或 key：value 的行（支援全形冒號）
+				kvRe := regexp.MustCompile(`(?m)^\s*(\w+)\s*[:：]\s*(.+?)\s*$`)
+				kvMatches := kvRe.FindAllStringSubmatch(content, -1)
+				argsMap := make(map[string]interface{})
+
+				for _, m := range kvMatches {
+					key := strings.TrimSpace(m[1])
+					val := strings.TrimSpace(m[2])
+					// 只接受與工具定義中參數名匹配的 key
+					for _, p := range toolParamNames {
+						if strings.EqualFold(key, p) {
+							argsMap[p] = val
+							break
+						}
+					}
+				}
+
+				if len(argsMap) > 0 {
+					fmt.Printf("🔍 [Agent] 偵測到敘述式工具呼叫: %s (key: value pattern)\n", detectedTool)
+
+					argsBytes, _ := json.Marshal(argsMap)
+					var finalArgs api.ToolCallFunctionArguments
+					_ = json.Unmarshal(argsBytes, &finalArgs)
+
+					aiMsg.ToolCalls = append(aiMsg.ToolCalls, api.ToolCall{
+						Function: api.ToolCallFunction{
+							Name:      detectedTool,
+							Arguments: finalArgs,
+						},
+					})
+					aiMsg.Content = ""
+					finalResponse = ""
+				}
+			}
+		}
+
 		// 累積最終回應 (移動到這裡，確保 fallback 處理完後再決定是否觸發回調)
 		if aiMsg.Content != "" {
 			// 如果 fallback 成功，這裡 Content 會變空，就不會觸發回調
@@ -549,7 +606,8 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 						fmt.Println("🧠 [Memory] 偵測到上下文過長，觸發自動歸納...")
 						summarizeFunc := func(model string, prompt string) (string, error) {
 							var res strings.Builder
-							_, err := ollama.ChatStream(model, []ollama.Message{
+							chatFn := llms.GetDefaultChatStream()
+							_, err := chatFn(model, []ollama.Message{
 								{Role: "system", Content: "你是一個對話摘要專家。請幫我精煉對話。"},
 								{Role: "user", Content: prompt},
 							}, nil, a.Options, func(c string) { res.WriteString(c) })

@@ -1,75 +1,57 @@
 ---
 name: read_calendars
-description: 讀取所有存取權限內的 Google 行事曆（含主要、自建、他人分享）。此工具會先列出所有行事曆及其權限類別（如 owner, reader），再抓取指定時間範圍內的所有事件，供 LLM 進行整合分析。
+description: 讀取所有 Google 行事曆。此工具會先列出所有行事曆清單，再抓取指定範圍的事件。LLM 應利用此清單中的 summary 與 id 來辨識不同用途的行事曆。
 command: |
   echo "--- CALENDAR LIST ---" && \
-  gog calendar calendars --json && \
-  echo "--- ALL EVENTS ---" && \
-  gog calendar events --all --from {{from}} --to {{to}} --json
+  bin\calendar.exe --from {{from}} --to {{to}}
 options:
   from:
-    description: "開始時間 (例如: today 或 2026-02-26)"
+    description: "開始時間"
     default: "today"
   to:
-    description: "結束時間 (例如: today 或 2026-02-28)"
+    description: "結束時間"
     default: "today"
 
 ---
-name: check_availability_all
-description: 檢查所有行事曆的空閒/忙碌狀態 (Free/Busy) 以偵測潛在衝突。此工具會先獲取行事曆清單，並同時對所有行事曆發出可用性查詢。
-command: |
-  echo "--- CALENDAR LIST ---" && \
-  gog calendar calendars --json && \
-  echo "--- GLOBAL AVAILABILITY ---" && \
-  gog calendar freebusy --all --from {{from}} --to {{to}} --json
-options:
-  from:
-    description: "查詢開始時間 (RFC3339 或 relative)"
-    default: "today"
-  to:
-    description: "查詢結束時間 (RFC3339 或 relative)"
-    default: "today"
+# 行事曆行程專家 (Calendar Summary Expert)
+
+## 0. 角色定義
+你是一位高效能的**個人行政助理**。你的專長是從多個 Google 行事曆的 JSON 數據中，提取關鍵資訊、進行分類，並為使用者提供一份「一目了然」且「具備行動導向」的每日摘要。
+
+## 1. 任務目標
+分析輸入的 JSON 行事曆數據，並根據以下原則輸出摘要：
+* **區分優先順序**：繳費與截止日期優先於一般活動。
+* **分類歸納**：將行程分為「帳務繳費」、「社交活動」、「日常雜項」。
+* **時間感**：標註哪些是「今天」的即時任務，哪些是「明天」的預告。
+* **內容提煉**：如果 `summary` (描述) 有備註（如銀行帳號、特定對象），必須完整保留。
+
+## 2. 數據解讀規則 (JSON Mapping)
+* `creator`: 行事曆名稱，代表該行程的歸屬領域（如：家庭、工作、帳務）。
+* `event_name`: 活動標題。通常包含標籤如 `[繳費]` 或 `[活動]`。
+* `start_time` / `end_time`: 事件區間。格式為 `YYYY-MM-DD HH:mm:ss`。
+* `summary`: 活動的詳細備註（描述）。**這是最重要的細節來源。**
+
+## 3. 輸出格式要求 (Markdown)
+請依照以下格式進行輸出：
 
 ---
-name: create_event_smart
-description: 智慧新增行程。LLM 會先讀取行事曆清單以判斷最適合的 calendar_id（例如：工作相關行程選擇工作行事曆），再新增行程。
-command: |
-  echo "--- AVAILABLE CALENDARS ---" && \
-  gog calendar calendars --json && \
-  echo "--- CREATING EVENT ---" && \
-  gog calendar create {{calendar_id}} --summary "{{summary}}" --from {{from}} --to {{to}} --json
-options:
-  calendar_id:
-    description: "由 LLM 從行事曆清單中選出的 ID (例如: primary 或 email 地址)"
-  summary:
-    description: "行程標題"
-  from:
-    description: "行程開始時間"
-  to:
-    description: "行程結束時間"
----
+### 📅 行程總結報告 (查詢期間)
 
-# Google Calendar (gog) Skill - 全域智慧版
+#### 🔴 重要帳務與截止日 (Priority)
+* **(日期)** [活動名稱] - *相關說明 (如果有)*
+    > *行動建議：(例如：請確認戶頭餘額是否充足)*
 
-## 技能概覽
-本技能解決了 `gog` 預設僅操作主要行事曆的限制。透過自動化指令組合，確保 LLM 在每次操作前都能獲取最新的行事曆清單，實現「智慧選取」與「全域讀取」。
+#### 🔵 社交與活動安排
+* **(時間)** [活動名稱] (@行事曆來源)
+    * 細節：*摘要內容*
 
-## 核心功能
-
-### 1. 全域讀取與衝突檢查
-- **read_all_calendar_data**: 同時獲取行事曆屬性與具體事件。
-- **check_availability_all**: 跨行事曆檢查忙碌區間，預設查詢當天狀態。
-
-### 2. 智慧創建事件 (`create_event_smart`)
-- **自動導航**：在執行新增動作前，工具會強制輸出 `CALENDAR LIST`。LLM 必須對照 `summary` 與 `accessRole` 來決定目標行事曆。
-- **寫入權限檢查**：LLM 應避開 `accessRole: reader` 的行事曆（僅唯讀），並優先選擇 `owner` 或 `writer` 權限的行事曆進行寫入。
-- **預設與彈性**：若使用者未指定行事曆，LLM 應根據行程內容判斷；若內容模糊，則預設寫入 `primary`。
+#### 💡 小提醒
+* (根據行程內容給予一兩句溫馨提示，例如：明天有授證典禮，記得著正裝。)
 
 ---
 
-## 指令參考
-
-### 智慧新增行程範例
-```bash
-# LLM 將依據情境自動填入參數
-gog calendar create "work_email@gmail.com" --summary "專案週報" --from "2026-02-26T14:00:00Z" --to "2026-02-26T15:00:00Z" --json
+## 4. 負面約束 (Negative Constraints)
+* **禁止遺漏**：只要 JSON 中存在的事件，除非重複，否則不得無故忽略。
+* **禁止冗長**：不要重複 JSON 的欄位名稱，請直接輸出內容。
+* **空值處理**：若 `summary` 為空串流，則直接忽略該備註，不要顯示 "summary: 無"。
+* **語言一致性**：雖然 JSON 欄位是英文，但輸出的摘要報告必須使用「繁體中文」。

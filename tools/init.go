@@ -20,6 +20,7 @@ import (
 	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/internal/memory"
 	"github.com/asccclass/pcai/internal/scheduler"
+	"github.com/asccclass/pcai/llms"
 	"github.com/asccclass/pcai/llms/ollama"
 	"github.com/asccclass/pcai/skills"
 	browserskill "github.com/asccclass/pcai/skills/browser"
@@ -96,7 +97,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		fmt.Println("🧠 [Personalization] 開始分析日誌以提取用戶偏好...")
 		worker := history.NewPersonalizationWorker(filepath.Join(home, "botmemory"), sqliteDB, cfg.Model, func(model, prompt string) (string, error) {
 			var resp strings.Builder
-			_, err := ollama.ChatStream(model, []ollama.Message{
+			chatFn := llms.GetDefaultChatStream()
+			_, err := chatFn(model, []ollama.Message{
 				{Role: "system", Content: "你是一個個性化分析專家。"},
 				{Role: "user", Content: prompt},
 			}, nil, ollama.Options{Temperature: 0.3}, func(c string) { resp.WriteString(c) })
@@ -434,27 +436,22 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 5. 💡 溫馨建議
 `, emailResult, calendarResult, weatherResult)
 
-		// 使用 Ollama 產生摘要
-		var result struct {
-			Response string `json:"response"`
-		}
-		resp, err := resty.New().SetTimeout(120 * time.Second).R().
-			SetBody(map[string]interface{}{
-				"model":  cfg.Model,
-				"prompt": prompt,
-				"stream": false,
-			}).
-			SetResult(&result).
-			Post(fmt.Sprintf("%s/api/generate", cfg.OllamaURL))
+		// 使用設定的 LLM Provider 產生摘要
+		var briefingResult strings.Builder
+		chatFn := llms.GetDefaultChatStream()
+		_, llmErr := chatFn(cfg.Model, []ollama.Message{
+			{Role: "system", Content: "你是一位貼心的數位管家。"},
+			{Role: "user", Content: prompt},
+		}, nil, ollama.Options{Temperature: 0.5}, func(c string) { briefingResult.WriteString(c) })
 
 		briefing := ""
-		if err != nil || resp.IsError() {
-			log.Printf("⚠️ [MorningBriefing] LLM 彙整失敗: %v", err)
+		if llmErr != nil {
+			log.Printf("⚠️ [MorningBriefing] LLM 彙整失敗: %v", llmErr)
 			// Fallback: 直接拼裝原始資料
 			briefing = fmt.Sprintf("☀️ 早安！以下是今日概覽：\n\n📧 **郵件**\n%s\n\n📅 **行程**\n%s\n\n🌤️ **天氣**\n%s",
 				emailResult, calendarResult, weatherResult)
 		} else {
-			briefing = strings.TrimSpace(result.Response)
+			briefing = strings.TrimSpace(briefingResult.String())
 		}
 
 		// 5. 發送到 Telegram (先嘗試 Markdown，失敗則用純文字)

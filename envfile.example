@@ -5,8 +5,10 @@ EDITOR=notepad
 SignalHost=
 SignalNumber=
 
-# Ollama 配置
-PCAI_MODEL=llama3.3
+# GitHub Copilot 配置 (使用 pcai copilot-login 登入後自動設定)
+# 當 PCAI_PROVIDER=copilot 時，PCAI_MODEL 應設為 Copilot 支援的模型 (如 gpt-4o)
+PCAI_MODEL=gpt-5.2  #llama3.3
+
 # 由於 Ollama client 使用 OLLAMA_HOST 作為環境變數，所以要設定 OLLAMA_HOST
 OLLAMA_HOST=
 PCAI_SYSTEM_PROMPT=
@@ -34,3 +36,6 @@ SHORT_TERM_TTL_DAYS=7
 WHATSAPP_ENABLED=true
 
 ENABLE_AUTO_SKILL_CREATION=false
+
+# 將預設 Provider 改為 copilot or ollama
+PCAI_PROVIDER=copilot

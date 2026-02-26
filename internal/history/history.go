@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/asccclass/pcai/internal/memory"
+	"github.com/asccclass/pcai/llms"
 	"github.com/asccclass/pcai/llms/ollama"
 
 	"github.com/charmbracelet/lipgloss"
@@ -74,9 +75,10 @@ func CheckAndSummarize(s *Session, modelName string, systemPrompt string) {
 
 		var summaryResult strings.Builder
 
-		// 呼叫 Ollama 進行歸納 (使用較低的 Temperature 確保穩定)
+		// 呼叫 LLM 進行歸納 (使用較低的 Temperature 確保穩定)
 		opts := ollama.Options{Temperature: 0.3, TopP: 0.9}
-		_, err := ollama.ChatStream(modelName, []ollama.Message{
+		chatFn := llms.GetDefaultChatStream()
+		_, err := chatFn(modelName, []ollama.Message{
 			{Role: "system", Content: "你是一個知識萃取專家"},
 			{Role: "user", Content: summaryPrompt},
 		}, nil, opts, func(c string) {

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"log"
+	"os"
 	"strings"
 
 	"github.com/asccclass/pcai/llms"
@@ -36,6 +37,13 @@ func (r *Router) Route(input string) (*RouteResult, error) {
 	var providerName string
 
 	switch {
+	case strings.HasPrefix(input, "/copilot"):
+		copilotModel := os.Getenv("PCAI_MODEL")
+		if copilotModel == "" {
+			copilotModel = "gpt-4o"
+		}
+		targetModel = copilotModel
+		providerName = "copilot"
 	case strings.HasPrefix(input, "/code"):
 		targetModel = "claude-3-5-sonnet-latest"
 		providerName = "claude"
@@ -43,8 +51,12 @@ func (r *Router) Route(input string) (*RouteResult, error) {
 		targetModel = "gpt-4o"
 		providerName = "openai"
 	default:
+		defaultProvider := os.Getenv("PCAI_PROVIDER")
+		if defaultProvider == "" {
+			defaultProvider = "ollama"
+		}
 		targetModel = r.DefaultModel
-		providerName = "ollama"
+		providerName = defaultProvider
 	}
 
 	provider, err := llms.GetProviderFunc(providerName)

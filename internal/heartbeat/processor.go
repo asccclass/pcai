@@ -15,6 +15,7 @@ import (
 	"github.com/asccclass/pcai/internal/database"
 	"github.com/asccclass/pcai/internal/history"
 	"github.com/asccclass/pcai/internal/notify"
+	"github.com/asccclass/pcai/llms"
 	"github.com/asccclass/pcai/llms/ollama"
 	"github.com/asccclass/pcai/skills"
 	"github.com/go-resty/resty/v2"
@@ -128,29 +129,14 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 	}
 	formattedPrompt := fmt.Sprintf(systemPrompt, runtime.GOOS, toolPrompt, userInput)
 
-	// 呼叫 Ollama API (使用 go-resty)
-	var result struct {
-		Response string `json:"response"`
-	}
-
-	resp, err := b.httpClient.R().
-		SetContext(ctx).
-		SetBody(map[string]interface{}{
-			"model":  b.modelName,
-			"prompt": formattedPrompt,
-			"stream": false,
-			"format": "json", // 強制 Ollama 回傳 JSON 格式
-		}).
-		SetResult(&result).
-		Post(fmt.Sprintf("%s/api/generate", b.ollamaURL))
-
+	// 呼叫 LLM (使用設定的 Provider)
+	response, err := b.AskLLM(ctx, formattedPrompt)
 	if err != nil {
 		return nil, err
 	}
-	// 使用 resp 來檢查狀態碼
-	if resp.IsError() {
-		return nil, fmt.Errorf("Ollama 回傳錯誤狀態: %s (代碼: %d)", resp.Status(), resp.StatusCode())
-	}
+
+	var result struct{ Response string }
+	result.Response = response
 
 	// 解析 LLM 的 JSON 回覆
 	var intent IntentResponse
@@ -238,29 +224,14 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 
 	fmt.Printf("[Brain] 正在思考決策... \n內容:\n%s\n", snapshot)
 
-	// 真正呼叫 Ollama (複用之前的 HTTP 請求結構)
-	var result struct {
-		Response string `json:"response"`
-	}
-
-	resp, err := b.httpClient.R().
-		SetContext(ctx).
-		SetBody(map[string]interface{}{
-			"model":  b.modelName,
-			"prompt": prompt,
-			"stream": false,
-			"format": "json",
-		}).
-		SetResult(&result).
-		Post(fmt.Sprintf("%s/api/generate", b.ollamaURL))
-
+	// 真正呼叫 LLM (使用設定的 Provider)
+	response, err := b.AskLLM(ctx, prompt)
 	if err != nil {
-		return "", fmt.Errorf("Ollama 連線失敗: %w", err)
+		return "", fmt.Errorf("LLM 連線失敗: %w", err)
 	}
-	// 使用 resp 來檢查狀態碼
-	if resp.IsError() {
-		return "", fmt.Errorf("Ollama 回傳錯誤狀態: %s (代碼: %d)", resp.Status(), resp.StatusCode())
-	}
+
+	var result struct{ Response string }
+	result.Response = response
 
 	// 3. 清理回傳字串（移除 AI 可能多加的空格或換行）
 	decision := strings.TrimSpace(result.Response)
@@ -427,33 +398,22 @@ func (b *PCAIBrain) ExecuteDecision(ctx context.Context, decisionStr string, sna
 	return nil
 }
 
-// AskOllama 是一個通用的輔助方法，用於傳送 Prompt 並獲取純文字回覆
-func (b *PCAIBrain) AskOllama(ctx context.Context, prompt string) (string, error) {
-	var result struct {
-		Response string `json:"response"`
-	}
-
-	// 使用我們之前初始化的 httpClient (resty)
-	resp, err := b.httpClient.R().
-		SetContext(ctx).
-		SetBody(map[string]interface{}{
-			"model":  b.modelName, // 確保與你本地的模型名稱一致
-			"prompt": prompt,
-			"stream": false, // 簡報通常較長，關閉 stream 以一次性獲取內容
-		}).
-		SetResult(&result).
-		Post(fmt.Sprintf("%s/api/generate", b.ollamaURL))
-
+// AskLLM 通用輔助方法，使用設定的 Provider (PCAI_PROVIDER) 傳送 Prompt 並獲取純文字回覆
+func (b *PCAIBrain) AskLLM(ctx context.Context, prompt string) (string, error) {
+	var sb strings.Builder
+	chatFn := llms.GetDefaultChatStream()
+	_, err := chatFn(b.modelName, []ollama.Message{
+		{Role: "user", Content: prompt},
+	}, nil, ollama.Options{Temperature: 0.3}, func(c string) { sb.WriteString(c) })
 	if err != nil {
-		return "", fmt.Errorf("Ollama 請求失敗: %w", err)
+		return "", fmt.Errorf("LLM 請求失敗: %w", err)
 	}
+	return strings.TrimSpace(sb.String()), nil
+}
 
-	if resp.IsError() {
-		return "", fmt.Errorf("Ollama 回傳錯誤狀態: %d, 內容: %s", resp.StatusCode(), resp.String())
-	}
-
-	// 回傳過濾掉前後空格的純文字結果
-	return strings.TrimSpace(result.Response), nil
+// AskOllama 保留為向前相容的別名
+func (b *PCAIBrain) AskOllama(ctx context.Context, prompt string) (string, error) {
+	return b.AskLLM(ctx, prompt)
 }
 
 func (b *PCAIBrain) GenerateMorningBriefing(ctx context.Context) error {

@@ -361,6 +361,14 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 			if opts, ok := t.Def.Options[p]; ok && len(opts) > 0 {
 				fmt.Printf("⚠️ [DynamicTool] Missing param '%s', using default: '%s'\n", p, opts[0])
 				normalizedArgs[p] = opts[0]
+			} else {
+				// Fallback: 日期類參數預設使用 today
+				lowerP := strings.ToLower(p)
+				if lowerP == "from" || lowerP == "to" || lowerP == "date" || lowerP == "start" || lowerP == "end" {
+					today := time.Now().Format("2006-01-02")
+					fmt.Printf("⚠️ [DynamicTool] Missing date param '%s', using today: '%s'\n", p, today)
+					normalizedArgs[p] = today
+				}
 			}
 		}
 	}

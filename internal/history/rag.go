@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/asccclass/pcai/llms"
 	"github.com/asccclass/pcai/llms/ollama"
 )
 
@@ -66,7 +67,8 @@ func GetSummaryFromAI(modelName string, messages []ollama.Message) (string, erro
 	prompt := "請將上述對話內容精煉成 3 個重點，使用 Markdown 列表格式輸出。只回傳列表內容，不要有額外開場白。"
 
 	var summaryResult strings.Builder
-	_, err := ollama.ChatStream(modelName, []ollama.Message{
+	chatFn := llms.GetDefaultChatStream()
+	_, err := chatFn(modelName, []ollama.Message{
 		{Role: "system", Content: "你是一個專業的資料歸納員"},
 		{Role: "user", Content: "對話內容如下：\n" + sb.String() + "\n\n" + prompt},
 	}, nil, ollama.Options{Temperature: 0.1}, func(c string) {
