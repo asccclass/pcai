@@ -89,7 +89,7 @@ func runChat(cmd *cobra.Command, args []string) {
 	myAgent := agent.NewAgent(modelName, systemPrompt, sess, registry, logger)
 
 	// [MEMORY-FIRST] 設定記憶預搜尋回調
-	if tools.GlobalDB != nil || tools.GlobalMemoryToolKit != nil {
+	if cfg.MemoryEnabled && (tools.GlobalDB != nil || tools.GlobalMemoryToolKit != nil) {
 		myAgent.OnMemorySearch = agent.BuildMemorySearchFunc(tools.GlobalDB, tools.GlobalMemoryToolKit)
 	}
 

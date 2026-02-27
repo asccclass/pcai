@@ -13,13 +13,20 @@ func ExportFixExclusiveEndDate(startDate, endDate string) string {
 	return fixExclusiveEndDate(startDate, endDate)
 }
 
-func ExportFormatEventForLLM(e calendarEventRaw) string {
-	return formatEventForLLM(e)
+func ExportFormatGoogleEventForLLM(e googleCalendarEventRaw) string {
+	return formatGoogleEventForLLM(e)
 }
 
-func ExportProcessJSONEvents(rawEvents []json.RawMessage) string {
-	return processJSONEvents(rawEvents)
+func ExportProcessGoogleAPIEvents(rawEvents []json.RawMessage) string {
+	return processGoogleAPIEvents(rawEvents)
 }
 
-// ExportCalendarEventRaw 導出 calendarEventRaw 結構
-type ExportCalendarEventRaw = calendarEventRaw
+func ExportFormatCalendarEvent(creator string, e calendarEvent) string {
+	return formatCalendarEvent(creator, e)
+}
+
+// ExportCalendarEventRaw 導出 googleCalendarEventRaw 結構 (Google API 格式)
+type ExportCalendarEventRaw = googleCalendarEventRaw
+
+// ExportCalendarEvent 導出 calendarEvent 結構 (calendar.exe 格式)
+type ExportCalendarEvent = calendarEvent

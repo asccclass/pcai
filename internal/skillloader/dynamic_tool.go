@@ -608,16 +608,19 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 
 		// 使用開頭的字作為執行檔，後面的作為參數
 		// 注意：這裡直接執行可能會有安全風險
+		fmt.Printf("🔧 [DynamicSkill] Executing shell command: cmd /C %s\n", finalCmd)
 		cmd := exec.Command("cmd", "/C", finalCmd)
-		cmd.Env = append(os.Environ(), "PATH="+pathEnv)
-		// [FIX] 注入 ZONEINFO 以修復 Windows 上的時區解析問題
-		if runtime.GOOS == "windows" {
-			goroot := runtime.GOROOT()
-			if goroot != "" {
-				zoneinfo := filepath.Join(goroot, "lib", "time", "zoneinfo.zip")
-				cmd.Env = append(cmd.Env, "ZONEINFO="+zoneinfo)
+		/*
+			cmd.Env = append(os.Environ(), "PATH="+pathEnv)
+			// [FIX] 注入 ZONEINFO 以修復 Windows 上的時區解析問題
+			if runtime.GOOS == "windows" {
+				goroot := runtime.GOROOT()
+				if goroot != "" {
+					zoneinfo := filepath.Join(goroot, "lib", "time", "zoneinfo.zip")
+					cmd.Env = append(cmd.Env, "ZONEINFO="+zoneinfo)
+				}
 			}
-		}
+		*/
 		out, err := cmd.CombinedOutput()
 		output := string(out)
 		if err != nil {
@@ -644,11 +647,9 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 		}
 		return "", executionErr
 	}
-
 	// [POST-PROCESS] 針對特定 Skill 進行輸出後處理
 	if t.Def.Name == "read_calendars" {
 		result = postProcessCalendarOutput(result)
 	}
-
 	return result, nil
 }

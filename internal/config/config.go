@@ -24,6 +24,7 @@ type Config struct {
 	TelegramDebug     bool
 	GOGPath           string
 	ShortTermTTLDays  int // 短期記憶保留天數 (預設 7 天)
+	MemoryEnabled     bool
 	WhatsAppEnabled   bool
 	WhatsAppStorePath string
 	LineToken         string // [NEW] LINE Notify Token
@@ -119,6 +120,7 @@ func LoadConfig() *Config {
 		TelegramDebug:    getEnvBool("TELEGRAM_DEBUG", false),
 		GOGPath:          getEnv("GOG_PATH", filepath.Join(home, "bin", "gog.exe")),
 		ShortTermTTLDays: getEnvInt("SHORT_TERM_TTL_DAYS", 7),
+		MemoryEnabled:    getEnvBool("PCAI_MEMORY_ENABLED", true),
 
 		WhatsAppEnabled:   getEnvBool("WHATSAPP_ENABLED", false),
 		WhatsAppStorePath: getEnv("WHATSAPP_STORE_PATH", filepath.Join(home, "botmemory", "whatsapp-store.db")),

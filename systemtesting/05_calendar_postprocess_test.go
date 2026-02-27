@@ -65,7 +65,7 @@ func TestFormatEventForLLM_AllDay_SingleDay(t *testing.T) {
 	event.Start.Date = "2026-02-17"
 	event.End.Date = "2026-02-17" // 已修正後的 inclusive date
 
-	result := skillloader.ExportFormatEventForLLM(event)
+	result := skillloader.ExportFormatGoogleEventForLLM(event)
 	if !strings.Contains(result, "📅") {
 		t.Errorf("All-day event should contain 📅, got: %s", result)
 	}
@@ -84,7 +84,7 @@ func TestFormatEventForLLM_AllDay_MultiDay(t *testing.T) {
 	event.Start.Date = "2026-02-15"
 	event.End.Date = "2026-02-17"
 
-	result := skillloader.ExportFormatEventForLLM(event)
+	result := skillloader.ExportFormatGoogleEventForLLM(event)
 	if !strings.Contains(result, "[多天]") {
 		t.Errorf("Multi-day event should contain [多天], got: %s", result)
 	}
@@ -100,7 +100,7 @@ func TestFormatEventForLLM_TimedEvent(t *testing.T) {
 	event.Start.DateTime = "2026-02-17T09:00:00+08:00"
 	event.End.DateTime = "2026-02-17T09:30:00+08:00"
 
-	result := skillloader.ExportFormatEventForLLM(event)
+	result := skillloader.ExportFormatGoogleEventForLLM(event)
 	if !strings.Contains(result, "🕐") {
 		t.Errorf("Timed event should contain 🕐, got: %s", result)
 	}
@@ -117,7 +117,7 @@ func TestFormatEventForLLM_WithLocation(t *testing.T) {
 	event.Start.DateTime = "2026-02-17T12:00:00+08:00"
 	event.End.DateTime = "2026-02-17T13:00:00+08:00"
 
-	result := skillloader.ExportFormatEventForLLM(event)
+	result := skillloader.ExportFormatGoogleEventForLLM(event)
 	if !strings.Contains(result, "地點: 台北101") {
 		t.Errorf("Should contain location, got: %s", result)
 	}
@@ -131,7 +131,7 @@ func TestFormatEventForLLM_WithDescription(t *testing.T) {
 	event.Start.Date = "2026-02-17"
 	event.End.Date = "2026-02-17"
 
-	result := skillloader.ExportFormatEventForLLM(event)
+	result := skillloader.ExportFormatGoogleEventForLLM(event)
 	if !strings.Contains(result, "備註:") {
 		t.Errorf("Should contain description prefix, got: %s", result)
 	}
@@ -145,7 +145,7 @@ func TestFormatEventForLLM_TentativeStatus(t *testing.T) {
 	event.Start.Date = "2026-02-17"
 	event.End.Date = "2026-02-17"
 
-	result := skillloader.ExportFormatEventForLLM(event)
+	result := skillloader.ExportFormatGoogleEventForLLM(event)
 	if !strings.Contains(result, "[待確認]") {
 		t.Errorf("Tentative event should contain [待確認], got: %s", result)
 	}
