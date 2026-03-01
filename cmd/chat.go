@@ -88,6 +88,24 @@ func runChat(cmd *cobra.Command, args []string) {
 	// -------------------------------------------------------------
 	myAgent := agent.NewAgent(modelName, systemPrompt, sess, registry, logger)
 
+	// [BOOT] 系統啟動時，優先詢問 LLM 的姓名並寫入全域變數
+	fmt.Print(lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Render("AI 正在設定專屬稱呼..."))
+	bootMessages := []ollama.Message{
+		{Role: "system", Content: "你是一個專業的助理。"},
+		{Role: "user", Content: "請為你自己取一個簡短的名字（只要回覆名字即可，絕對不要回答其他對話或標點符號）。"},
+	}
+	// 繞過 agent.Chat 直接呼叫 Provider 確保這段對話不會被記錄進歷史
+	if nameMsg, err := myAgent.Provider(modelName, bootMessages, nil, currentOpts, nil); err == nil && nameMsg.Content != "" {
+		config.GlobalName = strings.TrimSpace(nameMsg.Content)
+		// 動態更新終端 Prompt 顯示名字
+		promptStr = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render(fmt.Sprintf(">>> [%s]: ", config.GlobalName))
+		fmt.Printf("\r\033[K%s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(fmt.Sprintf("✅ 系統已為 AI 命名為：%s", config.GlobalName)))
+	} else {
+		// 失敗或逾時的 Fallback
+		fmt.Print("\r\033[K")
+		config.GlobalName = "Assistant"
+	}
+
 	// [MEMORY-FIRST] 設定記憶預搜尋回調
 	if cfg.MemoryEnabled && (tools.GlobalDB != nil || tools.GlobalMemoryToolKit != nil) {
 		myAgent.OnMemorySearch = agent.BuildMemorySearchFunc(tools.GlobalDB, tools.GlobalMemoryToolKit)

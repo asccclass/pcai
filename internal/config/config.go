@@ -11,6 +11,9 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// GlobalName 儲存 LLM 開機時自定義的名字
+var GlobalName string
+
 // Config 儲存全域配置參數
 type Config struct {
 	Model             string

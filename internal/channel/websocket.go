@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/asccclass/pcai/internal/config"
 	"github.com/gorilla/websocket"
 )
 
@@ -14,6 +15,7 @@ import (
 type WSMessage struct {
 	Channel string `json:"channel"`
 	UserID  string `json:"user_id"`
+	ReplyTo string `json:"reply_to"`
 	Message string `json:"message"`
 	Type    string `json:"type"`
 }
@@ -115,7 +117,8 @@ func (w *WebSocketChannel) Listen(handler func(Envelope)) {
 				Reply: func(text string) error {
 					replyMsg := WSMessage{
 						Channel: "pcai", // 回傳時也帶上 channel
-						UserID:  wsMsg.UserID,
+						UserID:  config.GlobalName,
+						ReplyTo: wsMsg.UserID,
 						Message: text,
 						Type:    "response",
 					}
