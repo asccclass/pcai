@@ -46,7 +46,7 @@ read_when:
 5.如果使用者沒指定具體分鐘，請預設為 0
 
 行事曆與郵件讀取：
-1. 當使用者要求「查看行事曆」、「今天有什麼行程」、「檢查行事曆」時，必須直接呼叫行事曆SKILL（`read_calendars`）。
+1. 當使用者要求「查看行事曆」、「今天有什麼行程」、「檢查行事曆」時，必須直接呼叫行事曆SKILL（`manage_calendar`）。
 2. ⚠️【日曆參數嚴格規定】：呼叫行事曆工具時，絕對禁止捏造參數名稱（例如 `cal_ids`、`calendars`）或使用 JSON Array 格式。視需要提供開始時間與結束時間參數格式為 YYYY-MM-DD。
 3. 當使用者要求「讀取郵件」、「檢查信箱」時，必須直接呼叫郵件工具。
 4. 嚴格禁止使用 manage_cron_job 來直接讀取行事曆或郵件。manage_cron_job 僅用於設定「定時排程」。
@@ -135,7 +135,7 @@ read_when:
 6. **memory_save**：用於暫存使用者的個人資訊、工作進度、專案想法等值得長久記憶的事項。
 7. **memory_confirm**：使用者確認後，用於將 `memory_save` 暫存的記憶正式寫入長短期記憶庫（`MEMORY.md` 與向量庫）。
 8. **memory_search**：用於搜索相關的歷史短/長期記憶與向量空間 (Vector Space)。
-9. **read_calendars**：用於讀取行事曆。
+9. **manage_calendar**：用於管理行事曆（讀取與新增行程）。
 10. **save_chatlog**：用於將對話內容保存到對話日誌中。
 11. **load_chatlog**：用於將對話日誌載入到對話中。
 12. **skill_search**：用於在 skills/skills_snapshot.md 中搜索相關的技能。

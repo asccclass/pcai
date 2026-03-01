@@ -296,6 +296,10 @@ func getStringValue(v interface{}) string {
 }
 
 func (t *DynamicTool) Run(argsJSON string) (string, error) {
+	debug := false
+	if os.Getenv("Debug_Info") == "true" {
+		debug = true
+	}
 	// 1. 解析參數
 	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
@@ -464,6 +468,17 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 		finalCmd = strings.ReplaceAll(finalCmd, urlPlaceholder, encodedVal)
 	}
 
+	// [FIX] 將未提供的選填變數替換為空字串，避免指令執行失敗
+	for _, p := range t.Def.Params {
+		if _, exists := args[p]; !exists {
+			placeholder := fmt.Sprintf("{{%s}}", p)
+			finalCmd = strings.ReplaceAll(finalCmd, placeholder, "")
+
+			urlPlaceholder := fmt.Sprintf("{{url:%s}}", p)
+			finalCmd = strings.ReplaceAll(finalCmd, urlPlaceholder, "")
+		}
+	}
+
 	// [VALIDATION] 檢查是否還有未替換的變數 (避免執行錯誤指令)
 	if strings.Contains(finalCmd, "{{") && strings.Contains(finalCmd, "}}") {
 		return "", fmt.Errorf("指令參數未完全替換，請檢查輸入參數。目前的指令: %s", finalCmd)
@@ -607,8 +622,9 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 		}
 
 		// 使用開頭的字作為執行檔，後面的作為參數
-		// 注意：這裡直接執行可能會有安全風險
-		fmt.Printf("🔧 [DynamicSkill] Executing shell command: cmd /C %s\n", finalCmd)
+		if debug {
+			fmt.Printf("🔧 [DynamicSkill] Executing shell command: cmd /C %s\n", finalCmd)
+		}
 		cmd := exec.Command("cmd", "/C", finalCmd)
 		/*
 			cmd.Env = append(os.Environ(), "PATH="+pathEnv)
@@ -623,6 +639,9 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 		*/
 		out, err := cmd.CombinedOutput()
 		output := string(out)
+		if debug {
+			fmt.Printf("Output: %s\n", output)
+		}
 		if err != nil {
 			output += fmt.Sprintf("\nErrors: %v", err)
 			executionErr = err
@@ -641,14 +660,14 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 	}
 
 	if executionErr != nil {
-		// [IMPROVE] 將 stdout/stderr 併入錯誤訊息，讓 Agent 知道發生什麼事
+		// 將 stdout/stderr 併入錯誤訊息，讓 Agent 知道發生什麼事
 		if result != "" {
 			return "", fmt.Errorf("%v\nOutput:\n%s", executionErr, result)
 		}
 		return "", executionErr
 	}
 	// [POST-PROCESS] 針對特定 Skill 進行輸出後處理
-	if t.Def.Name == "read_calendars" {
+	if t.Def.Name == "manage_calendar" {
 		result = postProcessCalendarOutput(result)
 	}
 	return result, nil

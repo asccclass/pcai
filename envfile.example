@@ -43,3 +43,5 @@ ENABLE_AUTO_SKILL_CREATION=false
 
 # 將預設 Provider 改為 copilot or ollama
 PCAI_PROVIDER=copilot
+
+Debug_Info=false
