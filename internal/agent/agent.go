@@ -827,7 +827,7 @@ func (a *Agent) Chat(input string, onStream func(string)) (string, error) {
 func toolNameToMemorySource(toolName string) string {
 	sourceMap := map[string]string{
 		"get_taiwan_weather": "weather",
-		"read_calendars":     "calendar",
+		"manage_calendar":    "calendar",
 		"read_email":         "email",
 		"web_search":         "search",
 		"knowledge_search":   "knowledge_query",

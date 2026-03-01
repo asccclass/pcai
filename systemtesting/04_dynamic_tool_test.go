@@ -30,7 +30,7 @@ func TestDynamicTool_Name(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"read_calendars", "read_calendars"},
+		{"manage_calendar", "manage_calendar"},
 		{"My Tool", "my_tool"},
 		{"GoogleSearch", "googlesearch"},
 	}
@@ -46,12 +46,12 @@ func TestDynamicTool_Name(t *testing.T) {
 // --- Definition ---
 
 func TestDynamicTool_Definition_HasCorrectParams(t *testing.T) {
-	def := newTestDef("read_calendars", "gog calendar events --from {{from}} --to {{to}} --json")
+	def := newTestDef("manage_calendar", "gog calendar events --from {{from}} --to {{to}} --json")
 	tool := skillloader.NewDynamicTool(def, nil, nil)
 	apiDef := tool.Definition()
 
-	if apiDef.Function.Name != "read_calendars" {
-		t.Errorf("Expected name 'read_calendars', got %q", apiDef.Function.Name)
+	if apiDef.Function.Name != "manage_calendar" {
+		t.Errorf("Expected name 'manage_calendar', got %q", apiDef.Function.Name)
 	}
 
 	params := apiDef.Function.Parameters
@@ -76,7 +76,7 @@ func TestDynamicTool_Definition_HasCorrectParams(t *testing.T) {
 // --- Registration in Registry ---
 
 func TestDynamicTool_RegisterInRegistry(t *testing.T) {
-	def := newTestDef("read_calendars", "gog calendar events --from {{from}} --to {{to}} --json")
+	def := newTestDef("manage_calendar", "gog calendar events --from {{from}} --to {{to}} --json")
 	reg := core.NewRegistry()
 	tool := skillloader.NewDynamicTool(def, reg, nil)
 	reg.Register(tool)
@@ -84,13 +84,13 @@ func TestDynamicTool_RegisterInRegistry(t *testing.T) {
 	defs := reg.GetDefinitions()
 	found := false
 	for _, d := range defs {
-		if d.Function.Name == "read_calendars" {
+		if d.Function.Name == "manage_calendar" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("read_calendars not found in registry definitions")
+		t.Error("manage_calendar not found in registry definitions")
 	}
 }
 

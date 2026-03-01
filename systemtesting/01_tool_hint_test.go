@@ -26,8 +26,8 @@ func TestToolHint_CalendarKeyword_Chinese(t *testing.T) {
 			t.Errorf("Expected hint for input %q, got empty string", input)
 			continue
 		}
-		if !strings.Contains(hint, "read_calendars") {
-			t.Errorf("Hint for %q should mention 'read_calendars', got: %s", input, hint)
+		if !strings.Contains(hint, "manage_calendar") {
+			t.Errorf("Hint for %q should mention 'manage_calendar', got: %s", input, hint)
 		}
 	}
 }
@@ -43,8 +43,8 @@ func TestToolHint_CalendarKeyword_English(t *testing.T) {
 			t.Errorf("Expected hint for input %q, got empty string", input)
 			continue
 		}
-		if !strings.Contains(hint, "read_calendars") {
-			t.Errorf("Hint for %q should mention 'read_calendars', got: %s", input, hint)
+		if !strings.Contains(hint, "manage_calendar") {
+			t.Errorf("Hint for %q should mention 'manage_calendar', got: %s", input, hint)
 		}
 	}
 }
@@ -65,7 +65,7 @@ func TestToolHint_NoMatch(t *testing.T) {
 	}
 	for _, input := range inputs {
 		hint := agent.ExportGetToolHint(input)
-		if hint != "" && strings.Contains(hint, "read_calendars") {
+		if hint != "" && strings.Contains(hint, "manage_calendar") {
 			t.Errorf("Input %q should NOT match calendar hint, got: %s", input, hint)
 		}
 	}

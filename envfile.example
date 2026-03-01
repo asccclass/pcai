@@ -22,6 +22,10 @@ TELEGRAM_TOKEN=
 TELEGRAM_ADMIN_ID=
 TELEGRAM_DEBUG=false
 
+# WebSocket 配置
+WEBSOCKET_ENABLED=true
+WEBSOCKET_URL=wss://jarvis.justdrink.com.tw/webhook
+
 # Sandbox 配置
 WORKSPACE_PATH=
 

@@ -16,12 +16,32 @@ type toolHintRule struct {
 // toolHintRules 定義所有工具路由提示規則
 var toolHintRules = []toolHintRule{
 	{
+		Keywords: []string{"新增行程", "加入行事曆", "紀錄到行事曆", "建立行程", "安排行程", "加行程", "排行程", "add event", "create event", "新增到行事曆", "記到行事曆", "寫入行事曆"},
+		ToolName: "manage_calendar",
+		HintFunc: func(input, pendingID string) string {
+			today := time.Now().Format("2006-01-02")
+			tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+			return fmt.Sprintf(
+				`[SYSTEM INSTRUCTION] 使用者要求新增行事曆行程。你必須呼叫 manage_calendar 工具，並提供以下參數：
+- mode: 設為 "create"
+- summary: 行程摘要（從使用者描述中提取，例如「繳費」）
+- from: 行程開始日期時間 (YYYY-MM-DD)，今天是 %s，明天是 %s
+- to: 行程結束日期時間 (YYYY-MM-DD)
+- cal: 行事曆名稱（根據內容判斷，如「個人」「工作」「家庭」「帳務」）
+- rrule: 重複規則（若非重複事件則留空 ""）
+
+嚴禁使用 google_search、google_services 或 manage_cron_job。嚴禁回答「無法新增行程」，你有能力新增行程。`,
+				today, tomorrow,
+			)
+		},
+	},
+	{
 		Keywords: []string{"行事曆", "行程", "日程", "calendar", "schedule", "行程表"},
-		ToolName: "read_calendars",
+		ToolName: "manage_calendar",
 		HintFunc: func(input, pendingID string) string {
 			today := time.Now().Format("2006-01-02")
 			return fmt.Sprintf(
-				"[SYSTEM INSTRUCTION] 使用者要求查看行事曆。你必須呼叫 read_calendars 工具，並提供 from 和 to 參數（格式: YYYY-MM-DD）。今天的日期是 %s。如果使用者說「今天」，from 和 to 都設為 %s。嚴禁使用 google_search、google_services 或 manage_cron_job。",
+				"[SYSTEM INSTRUCTION] 使用者要求查看行事曆。你必須呼叫 manage_calendar 工具，並提供 mode、from 和 to 參數。mode 設為 \"read\"（讀取行程），from 和 to 格式為 YYYY-MM-DD。今天的日期是 %s。如果使用者說「今天」，from 和 to 都設為 %s。嚴禁使用 google_search、google_services 或 manage_cron_job。",
 				today, today,
 			)
 		},

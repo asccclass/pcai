@@ -18,17 +18,20 @@ type mockTool struct {
 	result string
 }
 
-func (m *mockTool) Name() string          { return m.name }
-func (m *mockTool) Definition() api.Tool  { return api.Tool{Type: "function", Function: api.ToolFunction{Name: m.name, Description: "mock"}} }
+func (m *mockTool) Name() string  { return m.name }
+func (m *mockTool) IsSkill() bool { return false }
+func (m *mockTool) Definition() api.Tool {
+	return api.Tool{Type: "function", Function: api.ToolFunction{Name: m.name, Description: "mock"}}
+}
 func (m *mockTool) Run(argsJSON string) (string, error) { return m.result, nil }
 
 // --- Register & CallTool ---
 
 func TestRegistry_RegisterAndCall(t *testing.T) {
 	reg := core.NewRegistry()
-	reg.Register(&mockTool{name: "read_calendars", result: "events_json"})
+	reg.Register(&mockTool{name: "manage_calendar", result: "events_json"})
 
-	result, err := reg.CallTool("read_calendars", `{"from":"2026-02-17","to":"2026-02-17"}`)
+	result, err := reg.CallTool("manage_calendar", `{"from":"2026-02-17","to":"2026-02-17"}`)
 	if err != nil {
 		t.Fatalf("CallTool failed: %v", err)
 	}
@@ -102,8 +105,11 @@ type echoArgsTool struct {
 	name string
 }
 
-func (e *echoArgsTool) Name() string          { return e.name }
-func (e *echoArgsTool) Definition() api.Tool  { return api.Tool{Type: "function", Function: api.ToolFunction{Name: e.name}} }
+func (e *echoArgsTool) Name() string  { return e.name }
+func (e *echoArgsTool) IsSkill() bool { return false }
+func (e *echoArgsTool) Definition() api.Tool {
+	return api.Tool{Type: "function", Function: api.ToolFunction{Name: e.name}}
+}
 func (e *echoArgsTool) Run(argsJSON string) (string, error) { return argsJSON, nil }
 
 // --- Priority ---

@@ -39,8 +39,8 @@ func NewDispatcher(p Processor, adminID string) *Dispatcher {
 func (d *Dispatcher) HandleMessage(env channel.Envelope) {
 	log.Printf("[%s] 收到訊息 (來自 %s): %s", env.Platform, env.SenderID, env.Content)
 
-	// 1. 權限檢查
-	if !d.isAuthorized(env.SenderID) {
+	// 1. 權限檢查 (WebSocket channel 從內部控管不阻擋連線，如果需要阻擋可在 websocket.go 實作)
+	if env.Platform != "websocket" && !d.isAuthorized(env.SenderID) {
 		log.Printf("拒絕存取：用戶 %s 未在白名單中", env.SenderID)
 		_ = env.Reply("⚠️ 您尚未獲得授權，請聯繫管理員。您的 ID 是: " + env.SenderID)
 		return

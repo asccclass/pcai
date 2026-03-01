@@ -28,6 +28,8 @@ type Config struct {
 	WhatsAppEnabled   bool
 	WhatsAppStorePath string
 	LineToken         string // [NEW] LINE Notify Token
+	WebsocketEnabled  bool   // [NEW] WebSocket Client feature
+	WebsocketURL      string // [NEW] WebSocket Connection URL
 }
 
 func getEnvBool(key string, fallback bool) bool {
@@ -125,5 +127,7 @@ func LoadConfig() *Config {
 		WhatsAppEnabled:   getEnvBool("WHATSAPP_ENABLED", false),
 		WhatsAppStorePath: getEnv("WHATSAPP_STORE_PATH", filepath.Join(home, "botmemory", "whatsapp-store.db")),
 		LineToken:         getEnv("LINE_TOKEN", ""),
+		WebsocketEnabled:  getEnvBool("WEBSOCKET_ENABLED", false), // 預設關閉
+		WebsocketURL:      getEnv("WEBSOCKET_URL", "wss://jarvis.justdrink.com.tw/webhook"),
 	}
 }

@@ -23,14 +23,14 @@ func TestIntegration_ToolHintToRegistry(t *testing.T) {
 	if hint == "" {
 		t.Fatal("Tool hint should detect calendar keyword")
 	}
-	if !strings.Contains(hint, "read_calendars") {
-		t.Fatal("Hint should mention read_calendars")
+	if !strings.Contains(hint, "manage_calendar") {
+		t.Fatal("Hint should mention manage_calendar")
 	}
 
 	// Step 2: Registry 查找
 	reg := core.NewRegistry()
 	def := &skillloader.SkillDefinition{
-		Name:        "read_calendars",
+		Name:        "manage_calendar",
 		Description: "Read calendar events",
 		Command:     "echo {{from}} {{to}}",
 		Params:      skillloader.ParseParams("echo {{from}} {{to}}"),
@@ -39,7 +39,7 @@ func TestIntegration_ToolHintToRegistry(t *testing.T) {
 	reg.Register(tool)
 
 	// Step 3: 驗證 Registry 能找到工具
-	result, err := reg.CallTool("read_calendars", `{"from":"2026-02-17","to":"2026-02-17"}`)
+	result, err := reg.CallTool("manage_calendar", `{"from":"2026-02-17","to":"2026-02-17"}`)
 	if err != nil {
 		t.Fatalf("CallTool failed: %v", err)
 	}
@@ -59,16 +59,16 @@ func TestIntegration_FullCalendarPipeline(t *testing.T) {
 		t.Fatalf("LoadSkills failed: %v", err)
 	}
 
-	// Step 2: 找到 read_calendars 技能
+	// Step 2: 找到 manage_calendar 技能
 	var calendarSkill *skillloader.SkillDefinition
 	for _, s := range loadedSkills {
-		if s.Name == "read_calendars" {
+		if s.Name == "manage_calendar" {
 			calendarSkill = s
 			break
 		}
 	}
 	if calendarSkill == nil {
-		t.Fatal("read_calendars skill not found")
+		t.Fatal("manage_calendar skill not found")
 	}
 
 	// Step 3: 驗證技能定義
@@ -82,8 +82,8 @@ func TestIntegration_FullCalendarPipeline(t *testing.T) {
 	// Step 4: 建立 DynamicTool 並驗證定義
 	tool := skillloader.NewDynamicTool(calendarSkill, nil, nil)
 	apiDef := tool.Definition()
-	if apiDef.Function.Name != "read_calendars" {
-		t.Errorf("Expected name 'read_calendars', got %q", apiDef.Function.Name)
+	if apiDef.Function.Name != "manage_calendar" {
+		t.Errorf("Expected name 'manage_calendar', got %q", apiDef.Function.Name)
 	}
 
 	// Step 5: 模擬後處理
@@ -123,9 +123,9 @@ func TestIntegration_HintKeywordsMatchToolNames(t *testing.T) {
 		input    string
 		toolName string
 	}{
-		{"今天的行事曆", "read_calendars"},
-		{"查看行程", "read_calendars"},
-		{"check my schedule", "read_calendars"},
+		{"今天的行事曆", "manage_calendar"},
+		{"查看行程", "manage_calendar"},
+		{"check my schedule", "manage_calendar"},
 		{"幫我讀郵件", "read_email"},
 		{"check my email", "read_email"},
 		{"天氣如何", "get_taiwan_weather"},

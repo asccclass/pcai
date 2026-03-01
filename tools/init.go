@@ -116,8 +116,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		log.Printf("ℹ️ [Scheduler] personalization job: %v", err)
 	}
 
-	// 註冊每日簡報任務 (可以是 read_calendars 或 daily_calendar_report)
-	schedMgr.RegisterTaskType("read_calendars", func() {
+	// 註冊每日簡報任務 (可以是 manage_calendar 或 daily_calendar_report)
+	schedMgr.RegisterTaskType("manage_calendar", func() {
 		watcher := skills.NewCalendarWatcherSkill(cfg.TelegramToken, cfg.TelegramAdminID)
 		if briefing, err := watcher.GenerateDailyBriefing(client, cfg.Model); err != nil {
 			log.Printf("[Scheduler] Daily briefing failed: %v", err)
@@ -399,8 +399,8 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		}
 
 		// 2. 讀取今日行程
-		calArgs := fmt.Sprintf(`{"from":"%s","to":"%s"}`, today, today)
-		if res, err := registry.CallTool("read_calendars", calArgs); err != nil {
+		calArgs := fmt.Sprintf(`{"mode":"read","from":"%s","to":"%s"}`, today, today)
+		if res, err := registry.CallTool("manage_calendar", calArgs); err != nil {
 			log.Printf("⚠️ [MorningBriefing] 行事曆讀取失敗: %v", err)
 			calendarResult = "（行事曆讀取失敗）"
 		} else {
@@ -524,9 +524,10 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	// --- 新增：Telegram & WhatsApp 整合 ---
 	var tgChannel *channel.TelegramChannel // 宣告在外部以供 cleanup 存取
 	var waChannel *channel.WhatsAppChannel
+	var wsChannel *channel.WebSocketChannel // [NEW] WebSocket Channel
 
 	// [FIX] 移動到這裡，確保 registry 已經註冊完所有工具
-	if cfg.TelegramToken != "" || cfg.WhatsAppEnabled {
+	if cfg.TelegramToken != "" || cfg.WhatsAppEnabled || cfg.WebsocketEnabled {
 		// 1. 建立 Agent Adapter
 		adapter := gateway.NewAgentAdapter(registry, cfg.Model, cfg.SystemPrompt, cfg.TelegramDebug, logger)
 
@@ -591,6 +592,17 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 			// [FIX] 無論是否啟動成功都註冊工具，避免 Agent 幻覺 (Run 內會檢查 Channel 是否為 nil)
 			registry.Register(&WhatsAppSendTool{Channel: waChannel})
 		}
+
+		// 3.6 建立 WebSocket Channel
+		if cfg.WebsocketEnabled && cfg.WebsocketURL != "" {
+			var err error
+			wsChannel, err = channel.NewWebSocketChannel(cfg.WebsocketURL)
+			if err != nil {
+				log.Printf("⚠️ 無法啟動 WebSocket Channel: %v", err)
+			} else {
+				go wsChannel.Listen(dispatcher.HandleMessage)
+			}
+		}
 	}
 
 	// 注入工具執行器到大腦
@@ -603,6 +615,9 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		}
 		if waChannel != nil {
 			waChannel.Stop()
+		}
+		if wsChannel != nil {
+			wsChannel.Stop()
 		}
 	}
 
