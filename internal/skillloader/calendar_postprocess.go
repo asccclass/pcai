@@ -17,6 +17,7 @@ type calendarGroup struct {
 
 // calendarEvent 代表 calendar.exe 輸出的單一事件
 type calendarEvent struct {
+	ID        string `json:"id"`         // Google Calendar 事實上的事件 ID
 	StartTime string `json:"start_time"` // "2026-02-27 10:00:00"
 	EndTime   string `json:"end_time"`   // "2026-02-27 11:00:00"
 	EventName string `json:"event_name"` // "[繳費]玉山銀行信用卡..."
@@ -141,6 +142,11 @@ func formatCalendarEvent(creator string, e calendarEvent) string {
 		sb.WriteString(fmt.Sprintf(" | 備註: %s", desc))
 	}
 
+	// 附加 ID
+	if e.ID != "" {
+		sb.WriteString(fmt.Sprintf("\n    - ID: %s", e.ID))
+	}
+
 	return sb.String()
 }
 
@@ -238,6 +244,9 @@ func formatGoogleEventForLLM(e googleCalendarEventRaw) string {
 	}
 	if e.Status == "tentative" {
 		sb.WriteString(" [待確認]")
+	}
+	if e.ID != "" {
+		sb.WriteString(fmt.Sprintf("\n    - ID: %s", e.ID))
 	}
 
 	return sb.String()
