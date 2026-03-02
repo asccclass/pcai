@@ -621,11 +621,15 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 			pathEnv = binPath + ":" + pathEnv
 		}
 
-		// 使用開頭的字作為執行檔，後面的作為參數
+		// 取得 RepoPath (SKILL.md 目錄)，進而推斷專案根目錄
+		// 通常 t.Def.RepoPath 是 skills/manage_calendar
+		projectRoot := filepath.Dir(filepath.Dir(t.Def.RepoPath))
+
 		if debug {
-			fmt.Printf("🔧 [DynamicSkill] Executing shell command: cmd /C %s\n", finalCmd)
+			fmt.Printf("🔧 [DynamicSkill] Executing shell command: cmd /C %s in %s\n", finalCmd, projectRoot)
 		}
 		cmd := exec.Command("cmd", "/C", finalCmd)
+		cmd.Dir = projectRoot // 設定工作目錄為專案根目錄
 		/*
 			cmd.Env = append(os.Environ(), "PATH="+pathEnv)
 			// [FIX] 注入 ZONEINFO 以修復 Windows 上的時區解析問題

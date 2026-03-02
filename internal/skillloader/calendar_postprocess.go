@@ -22,6 +22,7 @@ type calendarEvent struct {
 	EndTime   string `json:"end_time"`   // "2026-02-27 11:00:00"
 	EventName string `json:"event_name"` // "[繳費]玉山銀行信用卡..."
 	Summary   string `json:"summary"`    // 備註/描述
+	Location  string `json:"location"`   // 地點
 }
 
 // postProcessCalendarOutput 處理行事曆輸出，將 calendar.exe 的 JSON 轉換為 LLM 友好的文字
@@ -132,6 +133,11 @@ func formatCalendarEvent(creator string, e calendarEvent) string {
 
 	// 附加行事曆來源
 	sb.WriteString(fmt.Sprintf(" @%s", creator))
+
+	// 附加地點
+	if e.Location != "" {
+		sb.WriteString(fmt.Sprintf(" | 地點: %s", e.Location))
+	}
 
 	// 附加備註
 	if e.Summary != "" {

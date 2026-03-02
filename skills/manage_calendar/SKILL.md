@@ -27,7 +27,7 @@ description: |
   2. 根據查詢結果，用語意比對找出符合的事件並取得其 ID。
   3. 最後使用 `mode=delete` 並明確帶入 `event` 參數（事件 ID）來執行刪除。
 command: |
-  bin\calendar.exe --mode={{mode}} --summary={{summary}} --from={{from}} --to={{to}} --cal={{cal}} --rrule={{rrule}} --location={{location}} --event={{event}} --force {{force}}
+  bin\calendar.exe --mode={{mode}} --summary={{summary}} --from={{from}} --to={{to}} --cal={{cal}} --rrule={{rrule}} --location={{location}} --event={{event}} --force={{force}}
 options:
   mode:
     - "read"
@@ -47,6 +47,7 @@ options:
 * **分類歸納**：將行程分為「帳務繳費」、「社交活動」、「日常雜項」。
 * **時間感**：標註哪些是「今天」的即時任務，哪些是「明天」的預告。
 * **內容提煉**：如果 `summary` (描述) 有備註（如銀行帳號、特定對象），必須完整保留。
+* **衝突偵測與提示**：在讀取與總結行程時，AI 必須主動檢查是否有「時間重疊」的行程。若發現在同一個時段有撞期（例如兩個活動都在同一天的 18:00），必須在行程列表中明確標示「⚠️ **時間衝突**」，並於「💡 助理溫馨小叮嚀」中主動提供提醒。
 
 ## 2. 數據解讀規則 (JSON Mapping)
 * `creator`: 行事曆名稱，代表該行程的歸屬領域（如：家庭、工作、帳務）。
@@ -121,6 +122,7 @@ options:
 * **[14:30]** 活動名稱 (@來源)
     - 📍 地點：*地點名稱 (若有)*
     - 💬 細節：*summary 內容*
+    > *🚨 若發現此行程與其他行程時間重疊，請在此加上「⚠️ **時間衝突**」的警示標籤。*
 
 #### 💡 助理溫馨小叮嚀
 * (根據上述行程，給予一至兩句綜合建議。例如：「今天整天都有多項繳費截止，建議早上先處理完畢，以免耽誤下午 17:30 的授證活動。」)
