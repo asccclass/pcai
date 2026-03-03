@@ -516,6 +516,27 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		log.Printf("ℹ️ [Scheduler] memory_cleanup job: %v", err)
 	}
 
+	// [NEW] 註冊 memory_sleep_optimization 任務類型 (每天凌晨 3 點執行 auto_summaries 碎片化記憶重整)
+	schedMgr.RegisterTaskType("memory_sleep", func() {
+		ctxSleep := context.Background()
+		// 提供一個回調讓 history 能共用 default chat stream 送 prompt 給 LLM (這裡共用 cfg.Model)
+		err := history.OptimizeAutoSummaries(ctxSleep, func(prompt string) (string, error) {
+			var resp strings.Builder
+			chatFn := llms.GetDefaultChatStream()
+			_, lErr := chatFn(cfg.Model, []ollama.Message{
+				{Role: "user", Content: prompt},
+			}, nil, ollama.Options{Temperature: 0.1}, func(c string) { resp.WriteString(c) })
+			return resp.String(), lErr
+		})
+
+		if err != nil {
+			log.Printf("⚠️ [MemorySleep] 睡眠重整失敗: %v", err)
+		}
+	})
+	if err := schedMgr.EnsureSystemJob("memory_sleep_optimization", "0 3 * * *", "memory_sleep", "合併碎片化記憶，減少體積"); err != nil {
+		log.Printf("ℹ️ [Scheduler] memory_sleep job: %v", err)
+	}
+
 	// 在所有 TaskType 註冊完成後 (包含 Dynamic Tools)，才載入資料庫中的排程
 	if err := schedMgr.LoadJobs(); err != nil {
 		fmt.Printf("⚠️ [Scheduler] Failed to load persistent jobs: %v\n", err)
