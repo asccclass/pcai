@@ -5,6 +5,7 @@
 *.log
 *.bak
 credentials.json
+copilot_token.json
 token.json
 envfile
 user_workspace/*
