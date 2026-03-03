@@ -61,7 +61,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 	if year < 2026 {
 		year = 2026
 	}
-	targetDate := fmt.Sprintf("%d-03-05", year)
+	targetDate := fmt.Sprintf("%d-03-04", year)
 	startTime := targetDate + "T18:00:00+08:00"
 	endTime := targetDate + "T20:00:00+08:00"
 
@@ -72,7 +72,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 		verify func(t *testing.T, result string)
 	}{
 		{
-			desc: "1. 幫我把3月5日晚上六點要去參加松山工農家長會在采芝樓聚餐的行程加入行事曆",
+			desc: "1. 幫我把3月4日晚上六點要去參加松山工農家長會在采芝樓聚餐的行程加入行事曆",
 			params: map[string]interface{}{
 				"mode":     "create",
 				"from":     startTime,
@@ -89,7 +89,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 			},
 		},
 		{
-			desc: "2. 查詢3月5日的行程是否有松山工農家長會的行事曆",
+			desc: "2. 查詢3月4日的行程是否有松山工農家長會的行事曆",
 			params: map[string]interface{}{
 				"mode": "read",
 				"from": targetDate,
@@ -102,7 +102,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 			},
 		},
 		{
-			desc: "3. 幫我修改3月5日晚上六點松山工農家長會活動的行事曆地點改為科長辦公室",
+			desc: "3. 幫我修改3月4日晚上六點松山工農家長會活動的行事曆地點改為科長辦公室",
 			params: map[string]interface{}{
 				"mode":     "update",
 				"event":    "", // 留空由底層 summary fuzzy match 去尋找 ID
@@ -120,7 +120,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 			},
 		},
 		{
-			desc: "4. 查詢3月5日晚上六點的行程地點是否為科長辦公室",
+			desc: "4. 查詢3月4日晚上六點的行程地點是否為校長辦公室",
 			params: map[string]interface{}{
 				"mode": "read",
 				"from": targetDate,
@@ -128,13 +128,13 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 			},
 			verify: func(t *testing.T, result string) {
 				// 應該要能夠在輸出中找到變更後的地點
-				if !strings.Contains(result, "科長辦公室") {
+				if !strings.Contains(result, "校長辦公室") {
 					t.Errorf("Expected updated location in read result, got: %s", result)
 				}
 			},
 		},
 		{
-			desc: "5. 刪除3月5日晚上六點松山工農家長會聚餐的行程",
+			desc: "5. 刪除3月4日晚上六點松山工農家長會聚餐的行程",
 			params: map[string]interface{}{
 				"mode":    "delete",
 				"event":   "", // 留空由底層模糊尋找
@@ -149,14 +149,14 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 			},
 		},
 		{
-			desc: "6. 查詢3月5日的行程是否已無松山工農家長會的聚餐行程",
+			desc: "6. 查詢3月4日的行程是否已無松山工農家長會的聚餐行程",
 			params: map[string]interface{}{
 				"mode": "read",
 				"from": targetDate,
 				"to":   targetDate,
 			},
 			verify: func(t *testing.T, result string) {
-				if strings.Contains(result, "松山工農家長會聚餐") && strings.Contains(result, "科長辦公室") {
+				if strings.Contains(result, "松山工農家長會聚餐") && strings.Contains(result, "校長辦公室") {
 					t.Errorf("Expected event to be absent, but found in: %s", result)
 				}
 			},
