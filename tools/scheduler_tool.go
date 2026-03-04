@@ -28,7 +28,7 @@ func (t *SchedulerTool) Definition() api.Tool {
 		Type: "function",
 		Function: api.ToolFunction{
 			Name:        t.Name(),
-			Description: "僅用於設定或取消「定時排程」背景任務。例如『每天早上8點讀取郵件』。注意：若使用者只是要「查看今天行事曆」或「讀取郵件」，請直接使用 manage_calendar 或 read_email 工具，不要使用此排程工具。",
+			Description: "僅用於設定或取消「定時排程」背景任務。例如『每天早上8點讀取郵件』。注意：若使用者只是要「查看今天行事曆」或「讀取郵件」，請直接使用 manage_calendar 或 manage_email 工具，不要使用此排程工具。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap
 				js := `{
@@ -44,7 +44,7 @@ func (t *SchedulerTool) Definition() api.Tool {
 					"task_type": {
 						"type": "string",
 						"description": "排程的任務類型（僅用於排程設定，不代表直接執行）",
-						"enum": ["read_email", "manage_calendar", "morning_briefing", "memory_cleanup"]
+						"enum": ["manage_email", "manage_calendar", "morning_briefing", "memory_cleanup"]
 					},
 					"task_name": {
 						"type": "string",
@@ -96,7 +96,7 @@ func (t *SchedulerTool) Run(argsJSON string) (string, error) {
 
 	// 強制映射：將 LLM 可能輸出的 check_email 轉為註冊好的 read_gmail
 	if taskType == "check_email" {
-		taskType = "read_email"
+		taskType = "manage_email"
 	}
 
 	if taskName == "" {

@@ -20,7 +20,7 @@ type EmailToolArgs struct {
 	MaxResults int    `json:"max_results,omitempty"`
 }
 
-func (t *EmailTool) Name() string { return "read_email" }
+func (t *EmailTool) Name() string { return "manage_email" }
 
 func (t *EmailTool) IsSkill() bool {
 	return false
@@ -30,7 +30,7 @@ func (t *EmailTool) Definition() api.Tool {
 	return api.Tool{
 		Type: "function",
 		Function: api.ToolFunction{
-			Name:        "read_email",
+			Name:        "manage_email",
 			Description: "使用 gog 工具讀取 Gmail 郵件。當使用者詢問「有沒有新信」、「查看最近的 Email」時使用。",
 			Parameters: func() api.ToolFunctionParameters {
 				var props api.ToolPropertiesMap

@@ -4,12 +4,10 @@ build:
 	go build -o $(BINARY_NAME) ./...
 
 build-arm:
-	# 針對你的 GX10 機器 (Linux ARM64)
 	GOOS=linux GOARCH=arm64 go build -o $(BINARY_NAME)-arm64 ./...
 
 build-win:
-	# 針對 Windows
-	GOOS=windows GOARCH=amd64 go build -o $(BINARY_NAME).exe ./...
+	set GOOS=windows; set GOARCH=amd64; go build -o $(BINARY_NAME).exe ./...
 
 clean:
 	rm -f $(BINARY_NAME) $(BINARY_NAME)-arm64 $(BINARY_NAME).exe

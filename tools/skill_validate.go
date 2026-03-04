@@ -29,7 +29,7 @@ func (t *SkillValidateTool) Definition() api.Tool {
 				js := `{
 					"skill_name": {
 						"type": "string",
-						"description": "要驗證的技能名稱 (skills/ 下的目錄名稱，如 weather、read_email)"
+						"description": "要驗證的技能名稱 (skills/ 下的目錄名稱，如 weather、manage_email)"
 					}
 				}`
 				_ = json.Unmarshal([]byte(js), &props)

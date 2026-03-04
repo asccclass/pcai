@@ -828,7 +828,7 @@ func toolNameToMemorySource(toolName string) string {
 	sourceMap := map[string]string{
 		"get_taiwan_weather": "weather",
 		"manage_calendar":    "calendar",
-		"read_email":         "email",
+		"manage_email":       "email",
 		"web_search":         "search",
 		"knowledge_search":   "knowledge_query",
 	}

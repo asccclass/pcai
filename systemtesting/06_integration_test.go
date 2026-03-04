@@ -126,8 +126,8 @@ func TestIntegration_HintKeywordsMatchToolNames(t *testing.T) {
 		{"今天的行事曆", "manage_calendar"},
 		{"查看行程", "manage_calendar"},
 		{"check my schedule", "manage_calendar"},
-		{"幫我讀郵件", "read_email"},
-		{"check my email", "read_email"},
+		{"幫我讀郵件", "manage_email"},
+		{"check my email", "manage_email"},
 		{"天氣如何", "get_taiwan_weather"},
 	}
 

@@ -360,13 +360,13 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	// [NEW] 自動技能生成工具
 	registry.Register(NewSkillGeneratorTool(client, cfg.Model, skillsDir))
 
-	// [FIX] 註冊 read_email 任務類型 (解決 Scheduler Warning)
-	schedMgr.RegisterTaskType("read_email", func() {
+	// [FIX] 註冊 manage_email 任務類型 (解決 Scheduler Warning)
+	schedMgr.RegisterTaskType("manage_email", func() {
 		// 預設參數: 查閱未讀信件
 		args := `{"query":"is:unread", "limit":5}`
-		res, err := registry.CallTool("read_email", args)
+		res, err := registry.CallTool("manage_email", args)
 		if err != nil {
-			log.Printf("❌ [Scheduler] read_email task failed: %v", err)
+			log.Printf("❌ [Scheduler] manage_email task failed: %v", err)
 			return
 		}
 		// 如果有內容 (且不是找不到)，發送到 Telegram
@@ -391,7 +391,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		var emailResult, calendarResult, weatherResult string
 
 		// 1. 讀取未讀郵件
-		if res, err := registry.CallTool("read_email", `{"query":"is:unread","limit":"10"}`); err != nil {
+		if res, err := registry.CallTool("manage_email", `{"query":"is:unread","limit":"10"}`); err != nil {
 			log.Printf("⚠️ [MorningBriefing] Email 讀取失敗: %v", err)
 			emailResult = "（郵件讀取失敗）"
 		} else {

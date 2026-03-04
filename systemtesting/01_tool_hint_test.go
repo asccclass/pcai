@@ -76,8 +76,8 @@ func TestToolHint_EmailKeyword(t *testing.T) {
 	if hint == "" {
 		t.Fatal("Expected hint for email keyword, got empty")
 	}
-	if !strings.Contains(hint, "read_email") {
-		t.Errorf("Email hint should mention 'read_email', got: %s", hint)
+	if !strings.Contains(hint, "manage_email") {
+		t.Errorf("Email hint should mention 'manage_email', got: %s", hint)
 	}
 }
 
