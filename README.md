@@ -111,7 +111,7 @@ PCAI 內建兩個 Skill 開發工具，使用者或 LLM 皆可直接呼叫：
 +
 +1. 至 Google Cloud Console 啟用 **Gmail API**。
 +2. 下載 `credentials.json` 並放置於專案根目錄。
-+3. 首次執行 `read_email` 任務時，終端機將顯示授權連結，請點擊並輸入驗證碼。
++3. 首次執行 `manage_email` 任務時，終端機將顯示授權連結，請點擊並輸入驗證碼。
 +
 +### 🎥 影片轉檔
 +
