@@ -16,7 +16,7 @@ clean:
 	go clean
 
 install:
-	go build -o $(BINARY_NAME) main.go
+	go build -o $(BINARY_NAME) ./...
 	mv $(BINARY_NAME) /usr/local/bin/
 
 test-tools:
