@@ -845,12 +845,13 @@ func extractJSONBlocks(text string) []string {
 	braceCount := 0
 
 	for i, r := range text {
-		if r == '{' {
+		switch r {
+case '{':
 			if braceCount == 0 {
 				startIdx = i
 			}
 			braceCount++
-		} else if r == '}' {
+		case '}':
 			braceCount--
 			if braceCount == 0 && startIdx != -1 {
 				blocks = append(blocks, text[startIdx:i+1])
