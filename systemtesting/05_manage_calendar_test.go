@@ -120,7 +120,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 			},
 		},
 		{
-			desc: "4. 查詢3月4日晚上六點的行程地點是否為校長辦公室",
+			desc: "4. 查詢3月4日晚上六點的行程地點是否為科長辦公室",
 			params: map[string]interface{}{
 				"mode": "read",
 				"from": targetDate,
@@ -128,7 +128,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 			},
 			verify: func(t *testing.T, result string) {
 				// 應該要能夠在輸出中找到變更後的地點
-				if !strings.Contains(result, "校長辦公室") {
+				if !strings.Contains(result, "科長辦公室") {
 					t.Errorf("Expected updated location in read result, got: %s", result)
 				}
 			},
@@ -156,7 +156,7 @@ func TestManageCalendar_EndToEndScenario(t *testing.T) {
 				"to":   targetDate,
 			},
 			verify: func(t *testing.T, result string) {
-				if strings.Contains(result, "松山工農家長會聚餐") && strings.Contains(result, "校長辦公室") {
+				if strings.Contains(result, "松山工農家長會聚餐") && strings.Contains(result, "科長辦公室") {
 					t.Errorf("Expected event to be absent, but found in: %s", result)
 				}
 			},
