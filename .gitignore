@@ -13,6 +13,7 @@ botmemory/backup/*
 botmemory/self_test_reports/*
 botmemory/whatsapp-*
 botmemory/history/*
+release/*
 sandbox/*
 temp_*
 skills/skills_snapshot.md

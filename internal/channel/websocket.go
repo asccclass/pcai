@@ -77,7 +77,12 @@ func (w *WebSocketChannel) Listen(handler func(Envelope)) {
 					return
 				case <-ticker.C:
 					if err := c.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
-						log.Printf("⚠️ [WebSocket] Ping 失敗: %v", err)
+						select {
+						case <-w.stopContext.Done():
+							// 忽略系統關閉時造成的錯誤
+						default:
+							log.Printf("⚠️ [WebSocket] Ping 失敗: %v", err)
+						}
 						return
 					}
 				}
@@ -88,7 +93,12 @@ func (w *WebSocketChannel) Listen(handler func(Envelope)) {
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				log.Printf("⚠️ [WebSocket] 讀取錯誤: %v", err)
+				select {
+				case <-w.stopContext.Done():
+					// 系統關閉中，忽略因為 conn.Close() 造成的錯誤
+				default:
+					log.Printf("⚠️ [WebSocket] 讀取錯誤: %v", err)
+				}
 				break // 跳出內部迴圈，觸發重連
 			}
 

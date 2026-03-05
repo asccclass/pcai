@@ -43,17 +43,26 @@ func (se *SearchEngine) Search(ctx context.Context, query string, topK int) (*Me
 	var vectorResults []SearchResult
 	var textResults []SearchResult
 
+	var vectorErr error
+	var isOllama bool
+
 	// Vector Search (if embedder available)
 	if se.mgr.embedder != nil {
-		var err error
-		vectorResults, err = se.vectorSearch(ctx, query, candidateK)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️ [Memory] 向量搜尋失敗: %v\n", err)
+		isOllama = se.mgr.embedder.Name() == "ollama"
+		vectorResults, vectorErr = se.vectorSearch(ctx, query, candidateK)
+		if vectorErr != nil {
+			fmt.Fprintf(os.Stderr, "⚠️ [Memory] 向量搜尋失敗: %v\n", vectorErr)
 		}
 	}
 
-	// BM25 Search (always available if FTS5 exists)
-	if hybrid.Enabled {
+	canUseBM25 := hybrid.Enabled
+	// 若無法連線到 ollama embed，或沒有使用 ollama，請不要用 BM25
+	if !isOllama || vectorErr != nil {
+		canUseBM25 = false
+	}
+
+	// BM25 Search
+	if canUseBM25 {
 		var err error
 		textResults, err = se.bm25Search(ctx, query, candidateK)
 		if err != nil {
