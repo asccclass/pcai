@@ -51,7 +51,11 @@ func (se *SearchEngine) Search(ctx context.Context, query string, topK int) (*Me
 		isOllama = se.mgr.embedder.Name() == "ollama"
 		vectorResults, vectorErr = se.vectorSearch(ctx, query, candidateK)
 		if vectorErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️ [Memory] 向量搜尋失敗: %v\n", vectorErr)
+			if isOllama && (strings.Contains(vectorErr.Error(), "connectex: No connection could be made") || strings.Contains(vectorErr.Error(), "connection refused") || strings.Contains(vectorErr.Error(), "context deadline exceeded")) {
+				// Suppress connection refused/timeout errors for Ollama to avoid spamming the console
+			} else {
+				fmt.Fprintf(os.Stderr, "⚠️ [Memory] 向量搜尋失敗: %v\n", vectorErr)
+			}
 		}
 	}
 

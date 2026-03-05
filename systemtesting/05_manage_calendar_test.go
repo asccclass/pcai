@@ -16,6 +16,7 @@ import (
 // ============================================================
 // Stage 5: Manage Calendar E2E Scenario Test
 // 測試計畫：測試對行事曆的新增、查詢、修改、刪除流程
+// 執行方式： go test -v .\systemtesting\05_manage_calendar_test.go
 // ============================================================
 
 // CalendarScenarioStep 定義端對端行事曆測試的每個步驟
