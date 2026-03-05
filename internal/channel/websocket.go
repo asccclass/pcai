@@ -13,26 +13,29 @@ import (
 
 // WSMessage 定義與中繼伺服器通訊的 JSON 格式
 type WSMessage struct {
-	Channel string `json:"channel"`
-	UserID  string `json:"user_id"`
-	ReplyTo string `json:"reply_to"`
-	Message string `json:"message"`
-	Type    string `json:"type"`
+	Channel     string `json:"channel"`
+	UserID      string `json:"user_id"`      // 傳源系統的固定識別碼 (envfile WEBSOCKET_USER_ID)
+	DisplayName string `json:"display_name"` // [NEW] 可變的顯示名稱 (發送方或 AI 名稱)
+	ReplyTo     string `json:"reply_to"`
+	Message     string `json:"message"`
+	Type        string `json:"type"`
 }
 
 // WebSocketChannel 實作 WebSocket 客戶端適配器
 type WebSocketChannel struct {
 	url         string
+	userID      string // [NEW] 固定識別碼，來自 envfile WEBSOCKET_USER_ID
 	conn        *websocket.Conn
 	stopContext context.Context
 	cancel      context.CancelFunc
 }
 
 // NewWebSocketChannel 初始化 WebSocket Channel
-func NewWebSocketChannel(url string) (*WebSocketChannel, error) {
+func NewWebSocketChannel(url, userID string) (*WebSocketChannel, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WebSocketChannel{
 		url:         url,
+		userID:      userID,
 		stopContext: ctx,
 		cancel:      cancel,
 	}, nil
@@ -126,11 +129,12 @@ func (w *WebSocketChannel) Listen(handler func(Envelope)) {
 				Platform: "websocket",
 				Reply: func(text string) error {
 					replyMsg := WSMessage{
-						Channel: "pcai", // 回傳時也帶上 channel
-						UserID:  config.GlobalName,
-						ReplyTo: wsMsg.UserID,
-						Message: text,
-						Type:    "response",
+						Channel:     "pcai",
+						UserID:      w.userID,          // [FIX] 固定使用 envfile 設定的識別碼
+						DisplayName: config.GlobalName, // [NEW] AI 的顯示名稱
+						ReplyTo:     wsMsg.UserID,      // 回覆原始發送者的 user_id
+						Message:     text,
+						Type:        "response",
 					}
 					replyData, err := json.Marshal(replyMsg)
 					if err != nil {

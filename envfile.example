@@ -25,6 +25,8 @@ TELEGRAM_DEBUG=false
 # WebSocket 配置
 WEBSOCKET_ENABLED=true
 WEBSOCKET_URL=wss://jarvis.justdrink.com.tw/webhook
+# 當 WEBSOCKET_ENABLED=true 時，此欄必填。作為每張從 AI 發出的訊息中的 user_id，代表此系統的唯一識別碼
+WEBSOCKET_USER_ID=
 
 # Sandbox 配置
 WORKSPACE_PATH=

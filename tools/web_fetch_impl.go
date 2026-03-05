@@ -154,7 +154,7 @@ func (wf *WebFetcher) fetchStandard(ctx context.Context, urlStr string, mode str
 
 	if strings.Contains(contentType, "text/html") {
 		// Parse HTML
-		return wf.processHTML(bodyStr, urlStr, mode)
+		return wf.processHTML(bodyStr, urlStr)
 	} else if strings.Contains(contentType, "application/json") {
 		// Pretty print JSON
 		var jsonObj interface{}
@@ -179,7 +179,7 @@ func (wf *WebFetcher) fetchStandard(ctx context.Context, urlStr string, mode str
 }
 
 // processHTML parses HTML and converts it to a simplified markdown-like format
-func (wf *WebFetcher) processHTML(htmlContent string, urlStr string, mode string) (*WebFetchResult, error) {
+func (wf *WebFetcher) processHTML(htmlContent string, urlStr string) (*WebFetchResult, error) {
 	doc, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		return nil, err

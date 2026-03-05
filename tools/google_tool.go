@@ -120,11 +120,6 @@ func (t *GoogleTool) Definition() api.Tool {
 	}
 }
 
-// sanitizeCommand 簡單過濾危險字元 (雖然是透過 exec.Command 呼叫，但還是小心點)
-func (t *GoogleTool) sanitize(input string) string {
-	return input // 暫時不做過多處理，依賴 exec.Command 的參數分離特性
-}
-
 func (t *GoogleTool) Run(argsJSON string) (string, error) {
 	// Parse into map[string]interface{} to handle wrapped values
 	var rawArgs map[string]interface{}

@@ -106,9 +106,10 @@ func CheckPendingPlan() string {
 			continue
 		}
 		icon := "⬜"
-		if s.Status == "in_progress" {
+		switch s.Status {
+		case "in_progress":
 			icon = "🔄"
-		} else if s.Status == "failed" {
+		case "failed":
 			icon = "❌"
 		}
 		sb.WriteString(fmt.Sprintf("  %s 步驟 %d: %s [%s]\n", icon, s.ID, s.Description, s.Status))
@@ -300,11 +301,12 @@ func (t *PlannerTool) getPlan(path string) (string, error) {
 	sb.WriteString(fmt.Sprintf("📋 當前任務: %s (Status: %s)\n", plan.Goal, plan.Status))
 	for _, s := range plan.Steps {
 		icon := "⬜"
-		if s.Status == "completed" {
+		switch s.Status {
+		case "completed":
 			icon = "✅"
-		} else if s.Status == "in_progress" {
+		case "in_progress":
 			icon = "🔄"
-		} else if s.Status == "failed" {
+		case "failed":
 			icon = "❌"
 		}
 		sb.WriteString(fmt.Sprintf("%s %d. %s [%s]\n", icon, s.ID, s.Description, s.Status))

@@ -617,7 +617,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 		// 3.6 建立 WebSocket Channel
 		if cfg.WebsocketEnabled && cfg.WebsocketURL != "" {
 			var err error
-			wsChannel, err = channel.NewWebSocketChannel(cfg.WebsocketURL)
+			wsChannel, err = channel.NewWebSocketChannel(cfg.WebsocketURL, cfg.WebsocketUserID)
 			if err != nil {
 				log.Printf("⚠️ 無法啟動 WebSocket Channel: %v", err)
 			} else {

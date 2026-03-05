@@ -33,6 +33,7 @@ type Config struct {
 	LineToken         string // [NEW] LINE Notify Token
 	WebsocketEnabled  bool   // [NEW] WebSocket Client feature
 	WebsocketURL      string // [NEW] WebSocket Connection URL
+	WebsocketUserID   string // [NEW] WebSocket 固定識別碼 (user_id 欄位來源)
 }
 
 func getEnvBool(key string, fallback bool) bool {
@@ -111,8 +112,8 @@ func LoadConfig() *Config {
 		CoreSystemPrompt = snapshot + "\n\n" + CoreSystemPrompt
 	}
 
-	return &Config{
-		// 從環境變數讀取，若無則使用後方的預設值
+	cfg := &Config{
+		// 從環境變數讀取，若無則使用後方的預設値
 		Model:        getEnv("PCAI_MODEL", getEnv("PCAI_MODEL", "llama3.3")),
 		OllamaURL:    ensureProtocol(getEnv("OLLAMA_HOST", "http://localhost:11434")),
 		SystemPrompt: getEnv("PCAI_SYSTEM_PROMPT", CoreSystemPrompt),
@@ -132,5 +133,14 @@ func LoadConfig() *Config {
 		LineToken:         getEnv("LINE_TOKEN", ""),
 		WebsocketEnabled:  getEnvBool("WEBSOCKET_ENABLED", false), // 預設關閉
 		WebsocketURL:      getEnv("WEBSOCKET_URL", "wss://jarvis.justdrink.com.tw/webhook"),
+		WebsocketUserID:   getEnv("WEBSOCKET_USER_ID", ""),
 	}
+
+	// 必填檢查：WebSocket 啟用時，WebsocketUserID 不得為空
+	if cfg.WebsocketEnabled && cfg.WebsocketUserID == "" {
+		fmt.Printf("❌ [Config] WEBSOCKET_ENABLED=true 但 WEBSOCKET_USER_ID 未設定，請在 envfile 中加入 WEBSOCKET_USER_ID=<您的唯一識別碼>\n")
+		return nil
+	}
+
+	return cfg
 }
