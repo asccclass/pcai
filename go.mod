@@ -22,7 +22,6 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/valyala/fasthttp v1.69.0
 	go.mau.fi/whatsmeow v0.0.0-20260211193157-7b33f6289f98
-	golang.org/x/net v0.49.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.40.0
 	golang.org/x/text v0.33.0
@@ -31,6 +30,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.44.3
 )
+
+require golang.org/x/net v0.49.0 // indirect
 
 require (
 	cloud.google.com/go/auth v0.18.1 // indirect

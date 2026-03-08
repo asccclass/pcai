@@ -266,7 +266,7 @@ func (t *BrowserGetTextTool) Definition() api.Tool {
 		"type": "function",
 		"function": {
 			"name": "browser_get_text",
-			"description": "獲取整個網頁的純文字內容 (Get full readable text of the page). 適用於只需要讀取文章、匯率或數據，不需要與畫面互動的場景. 必須先執行 browser_open.",
+			"description": "獲取整個網頁的純文字內容 (Get full readable text of the page). 適用於只需要讀取文章、匯率、表格數據等場景. 可在 browser_open 或 browser_click 之後使用，無需重新開啟頁面. 若 browser_click 切換到新視窗，需重新 browser_snapshot 才能繼續互動.",
 			"parameters": {
 				"type": "object",
 				"properties": {}

@@ -136,12 +136,24 @@ func (b *PCAIBrain) analyzeIntentWithOllama(ctx context.Context, userInput strin
 	}
 
 	var result struct{ Response string }
-	result.Response = response
+	result.Response = strings.TrimSpace(response)
+
+	// 嘗試從文字中提取 JSON
+	jsonStr := result.Response
+	startIdx := strings.Index(jsonStr, "{")
+	endIdx := strings.LastIndex(jsonStr, "}")
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		jsonStr = jsonStr[startIdx : endIdx+1]
+	}
 
 	// 解析 LLM 的 JSON 回覆
 	var intent IntentResponse
-	if err := json.Unmarshal([]byte(result.Response), &intent); err != nil {
-		fmt.Printf("⚠️ 解析意圖失敗，原始回覆:\n%s\n", result.Response)
+	if err := json.Unmarshal([]byte(jsonStr), &intent); err != nil {
+		runes := []rune(result.Response)
+		if len(runes) > 100 {
+			runes = runes[:100]
+		}
+		fmt.Printf("⚠️ 解析意圖失敗: %v\n原始回覆:\n%s...\n", err, string(runes))
 		return nil, fmt.Errorf("解析意圖失敗: %v", err)
 	}
 
@@ -239,12 +251,24 @@ func (b *PCAIBrain) Think(ctx context.Context, snapshot string) (string, error) 
 		return "", fmt.Errorf("Ollama 回傳內容為空")
 	}
 
+	// 嘗試從可能包有 markdown 或多餘對話的文字中提取 JSON
+	jsonStr := decision
+	startIdx := strings.Index(jsonStr, "{")
+	endIdx := strings.LastIndex(jsonStr, "}")
+	if startIdx != -1 && endIdx != -1 && endIdx > startIdx {
+		jsonStr = jsonStr[startIdx : endIdx+1]
+	}
+
 	// 解析 JSON 結果
 	var dec HeartbeatDecision
-	if err := json.Unmarshal([]byte(decision), &dec); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &dec); err != nil {
 		// 容錯：如果是因為超時或其他原因導致回傳了非 JSON 字串 (例如 HTML 錯誤頁面)
 		// 我們記錄錯誤但不讓程式崩潰 (雖然這裡 return err 會被上層 recover，或是 log print)
-		return "", fmt.Errorf("解析決策 JSON 失敗: %v (原始內容: %.20s...)", err, decision)
+		runes := []rune(decision)
+		if len(runes) > 50 {
+			runes = runes[:50]
+		}
+		return "", fmt.Errorf("解析決策 JSON 失敗: %v (原始內容: %s...)", err, string(runes))
 	}
 
 	// 核心：將思考過程存入資料庫

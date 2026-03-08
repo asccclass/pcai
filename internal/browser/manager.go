@@ -199,14 +199,22 @@ func (m *BrowserManager) Snapshot(interactiveOnly bool) (string, error) {
 				name = name[:47] + "..."
 			}
 
+			// Get href for links
+			hrefInfo := ""
+			if rolePtr == playwright.AriaRoleLink {
+				if h, err := nthLoc.GetAttribute("href"); err == nil && h != "" {
+					hrefInfo = fmt.Sprintf("\thref=\"%s\"", h)
+				}
+			}
+
 			m.lastRefID++
 			ref := fmt.Sprintf("@e%d", m.lastRefID)
 			m.refs[ref] = nthLoc
 
 			if name != "" {
-				sb.WriteString(fmt.Sprintf("- %s %q [ref=%s]\n", string(role), name, ref))
+				sb.WriteString(fmt.Sprintf("- %s %q [ref=%s]%s\n", string(role), name, ref, hrefInfo))
 			} else {
-				sb.WriteString(fmt.Sprintf("- %s [ref=%s]\n", string(role), ref))
+				sb.WriteString(fmt.Sprintf("- %s [ref=%s]%s\n", string(role), ref, hrefInfo))
 			}
 			count++
 			if count > 200 {
@@ -236,10 +244,49 @@ func (m *BrowserManager) Click(ref string) error {
 		return fmt.Errorf("ref %s not found. Page might have reloaded. Please snapshot again", ref)
 	}
 
-	// Playwright auto-scrolls into view and waits for actionability
-	return loc.Click(playwright.LocatorClickOptions{
-		Timeout: playwright.Float(5000), // 5s timeout
-	})
+	// 監聽點擊後可能彈出的新視窗（target="_blank" 連結或 window.open）
+	// 使用更可靠的 WaitForEvent (但不阻塞地用 goroutine 等待，配合 timeout)
+	newPageCh := make(chan playwright.Page, 1)
+	go func() {
+		ev, err := m.context.ExpectEvent("page", func() error { return nil }, playwright.BrowserContextExpectEventOptions{
+			Timeout: playwright.Float(8000),
+		})
+		if err == nil {
+			newPageCh <- ev.(playwright.Page)
+		}
+	}()
+
+	// 執行點擊（加入 Force: true 突破 Cookie Banner 遮擋）
+	if err := loc.Click(playwright.LocatorClickOptions{
+		Timeout: playwright.Float(10000),
+		Force:   playwright.Bool(true),
+	}); err != nil {
+		return err
+	}
+
+	// 判斷是否彈出新視窗（最多等 3 秒）
+	select {
+	case newPage := <-newPageCh:
+		// 新視窗已彈出，切換到新視窗
+		m.mu.Lock()
+		m.page = newPage
+		m.refs = make(map[string]playwright.Locator) // refs 已失效
+		m.lastRefID = 0
+		m.mu.Unlock()
+		// 等待新頁面載入完成
+		_ = newPage.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+			State:   playwright.LoadStateNetworkidle,
+			Timeout: playwright.Float(15000),
+		})
+		return nil
+	case <-time.After(8 * time.Second):
+		// 沒有新視窗，等待原頁面 networkidle
+		_ = m.page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+			State:   playwright.LoadStateNetworkidle,
+			Timeout: playwright.Float(10000),
+		})
+		return nil
+	}
 }
 
 // Type into Ref
@@ -300,7 +347,30 @@ func (m *BrowserManager) GetFullText() (string, error) {
 		return "", err
 	}
 
-	// 嘗試取得 body 的 innerText，這通常是去除了 script/style 且可見的純文字
+	// 檢查目前到底有哪些 page 開著（除錯用）
+	var pagesInfo []string
+	if m.context != nil {
+		for i, p := range m.context.Pages() {
+			pagesInfo = append(pagesInfo, fmt.Sprintf("Page %d: %s", i, p.URL()))
+			// 如果發現有其實已經打開的彈窗（但沒被捕捉到 m.page），我們可以強制把 m.page 指向最新的 page
+			if i == len(m.context.Pages())-1 && m.page != p && !strings.HasPrefix(p.URL(), "about:blank") {
+				m.mu.Lock()
+				m.page = p
+				m.refs = make(map[string]playwright.Locator)
+				m.lastRefID = 0
+				m.mu.Unlock()
+			}
+		}
+	}
+
+	// 等待 networkidle：確保 JS 動態渲染（如匯率表格、SPA 路由）完成
+	_ = m.page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
+		State:   playwright.LoadStateNetworkidle,
+		Timeout: playwright.Float(8000), // 最多等 8s
+	})
+
+	time.Sleep(500 * time.Millisecond)
+
 	val, err := m.page.Evaluate("document.body.innerText")
 	if err != nil {
 		return "", fmt.Errorf("failed to evaluate text: %v", err)
@@ -311,7 +381,12 @@ func (m *BrowserManager) GetFullText() (string, error) {
 		return "", fmt.Errorf("evaluated result is not a string")
 	}
 
-	return strings.TrimSpace(strVal), nil
+	debugHeader := ""
+	if len(pagesInfo) > 1 {
+		debugHeader = "[Debug] Open Pages:\n" + strings.Join(pagesInfo, "\n") + "\n\n"
+	}
+
+	return debugHeader + strings.TrimSpace(strVal), nil
 }
 
 // cleanUp gracefully tears down Playwright instances
