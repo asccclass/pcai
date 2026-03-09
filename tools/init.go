@@ -259,6 +259,7 @@ func InitRegistry(bgMgr *BackgroundManager, cfg *config.Config, logger *agent.Sy
 	registry.Register(&ListSkillsTool{Registry: registry})            // 列出所有技能
 	registry.Register(&VideoConverterTool{})
 	registry.Register(&EmailTool{}) // Replaced by dynamic skill
+	registry.Register(&EmailDraftTool{})
 	registry.Register(NewGoogleTool())
 	registry.Register(&GitAutoCommitTool{}) // Git 自動提交工具
 
