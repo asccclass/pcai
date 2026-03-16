@@ -1,0 +1,14 @@
+[
+  {
+    "role": "user",
+    "content": "Please use magic tool",
+    "timestamp": "21:07",
+    "created_at": "2026-03-04T21:07:23.2426958+08:00"
+  },
+  {
+    "role": "assistant",
+    "content": "I apologize.",
+    "timestamp": "21:07",
+    "created_at": "2026-03-04T21:07:23.2575751+08:00"
+  }
+]
