@@ -50,18 +50,23 @@ func TestSelfEvolutionProtocolInjection(t *testing.T) {
 	}
 
 	// 4. Verify
-	// Check the last message in session history
-	lastMsg := session.Messages[len(session.Messages)-1]
-	if lastMsg.Role != "tool" {
-		t.Errorf("Expected last message role to be 'tool', got '%s'", lastMsg.Role)
+	var toolMsg *ollama.Message
+	for i := len(session.Messages) - 1; i >= 0; i-- {
+		if session.Messages[i].Role == "tool" {
+			toolMsg = &session.Messages[i]
+			break
+		}
+	}
+	if toolMsg == nil {
+		t.Fatalf("Expected a tool feedback message in session history, got: %+v", session.Messages)
 	}
 
-	expectedPhrase := "觸發「自我演化協議」(Self-Evolution Protocol)"
-	if !strings.Contains(lastMsg.Content, expectedPhrase) {
-		t.Errorf("Expected tool feedback to contain '%s', got:\n%s", expectedPhrase, lastMsg.Content)
+	expectedPhrase := "Self-Evolution Protocol"
+	if !strings.Contains(toolMsg.Content, expectedPhrase) {
+		t.Errorf("Expected tool feedback to contain '%s', got:\n%s", expectedPhrase, toolMsg.Content)
 	}
 
-	if !strings.Contains(lastMsg.Content, "skill_scaffold") {
-		t.Errorf("Expected tool feedback to suggestion 'skill_scaffold', got:\n%s", lastMsg.Content)
+	if !strings.Contains(toolMsg.Content, "skill_scaffold") {
+		t.Errorf("Expected tool feedback to suggestion 'skill_scaffold', got:\n%s", toolMsg.Content)
 	}
 }

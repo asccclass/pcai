@@ -358,21 +358,12 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 		// 其他未知參數（如 "date"）直接丟棄，不影響執行
 	}
 
-	// 確保所有必需的參數都有值（從原始 args 搬過來或使用預設值）
+	// Only use explicit option defaults. Do not invent missing dates or other values.
 	for _, p := range t.Def.Params {
 		if _, exists := normalizedArgs[p]; !exists {
-			// 檢查是否有 Options 定義，若有則使用第一個作為預設
 			if opts, ok := t.Def.Options[p]; ok && len(opts) > 0 {
 				fmt.Printf("⚠️ [DynamicTool] Missing param '%s', using default: '%s'\n", p, opts[0])
 				normalizedArgs[p] = opts[0]
-			} else {
-				// Fallback: 日期類參數預設使用 today
-				lowerP := strings.ToLower(p)
-				if lowerP == "from" || lowerP == "to" || lowerP == "date" || lowerP == "start" || lowerP == "end" {
-					today := time.Now().Format("2006-01-02")
-					fmt.Printf("⚠️ [DynamicTool] Missing date param '%s', using today: '%s'\n", p, today)
-					normalizedArgs[p] = today
-				}
 			}
 		}
 	}
@@ -469,6 +460,12 @@ func (t *DynamicTool) Run(argsJSON string) (string, error) {
 	}
 
 	// [FIX] 將未提供的選填變數替換為空字串，避免指令執行失敗
+	// Missing placeholders that survive as standalone tokens are treated as required inputs.
+	standalonePlaceholderRe := regexp.MustCompile(`(^|\s)\{\{(?:url:)?[^}]+\}\}(\s|$)`)
+	if standalonePlaceholderRe.MatchString(finalCmd) {
+		return "", fmt.Errorf("指令參數未完全替換，請檢查輸入參數。目前的指令: %s", finalCmd)
+	}
+
 	for _, p := range t.Def.Params {
 		if _, exists := args[p]; !exists {
 			placeholder := fmt.Sprintf("{{%s}}", p)

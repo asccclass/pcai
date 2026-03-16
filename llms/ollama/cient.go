@@ -108,7 +108,9 @@ func ChatStream(modelName string, messages []Message, tools []api.Tool, opts Opt
 		// 處理 AI 生成的文字內容
 		if chunk.Message.Content != "" {
 			fullAssistantMsg.Content += chunk.Message.Content
-			callback(chunk.Message.Content) // 即時回傳片段給 UI 顯示
+			if callback != nil {
+				callback(chunk.Message.Content) // 即時回傳片段給 UI 顯示
+			}
 		}
 
 		// 處理 AI 請求的工具呼叫

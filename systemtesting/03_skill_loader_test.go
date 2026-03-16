@@ -76,7 +76,7 @@ func TestParseParams_MultipleWithPrefix(t *testing.T) {
 
 // --- LoadSkills (從實際目錄) ---
 
-func TestLoadSkills_ReadCalendarsExists(t *testing.T) {
+func TestLoadSkills_ManageCalendarExists(t *testing.T) {
 	// 找到專案根目錄
 	cwd, _ := os.Getwd()
 	skillsDir := filepath.Join(cwd, "..", "skills")
@@ -89,21 +89,21 @@ func TestLoadSkills_ReadCalendarsExists(t *testing.T) {
 	// 應該至少載入 read_calendars
 	found := false
 	for _, s := range loadedSkills {
-		if s.Name == "read_calendars" {
+		if s.Name == "manage_calendar" {
 			found = true
 			// 驗證指令模板
 			if s.Command == "" {
-				t.Error("read_calendars command should not be empty")
+				t.Error("manage_calendar command should not be empty")
 			}
 			// 驗證參數
 			if len(s.Params) < 2 {
-				t.Errorf("read_calendars should have at least 2 params (from, to), got %d: %v", len(s.Params), s.Params)
+				t.Errorf("manage_calendar should expose at least 2 params (from, to), got %d: %v", len(s.Params), s.Params)
 			}
 			break
 		}
 	}
 	if !found {
-		t.Error("read_calendars skill not found in loaded skills")
+		t.Error("manage_calendar skill not found in loaded skills")
 	}
 }
 
